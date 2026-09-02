@@ -1,0 +1,11 @@
+# Submission description
+
+Eclipse Inheritance is a browser action-RPG for players who want AI companions to feel useful without surrendering control of the game. Traditional companions follow fixed scripts, while tactical menus interrupt combat. Here, a WebMCP agent can inspect the live encounter, explain the next valid objective, and issue a structured command to Elias while the player continues controlling the Last Heir.
+
+This is a strong fit for WebMCP because the browser already contains the authoritative information an agent needs: current health, enemies, quest gates, inventory, boss phase and companion state. Instead of scraping the interface or relying on a separate backend, the app exposes that state through explicit browser tools. The agent can collaborate through the game’s real rules rather than guessing from screenshots or inventing off-screen events.
+
+The result is a better player experience during combat. A player can ask, “Inspect the battlefield and have Elias guard me,” and the agent can read the encounter, choose the appropriate structured action and immediately change Elias’s reversible tactical stance. The command is visibly attributed to the agent in the game. More consequential story changes remain pending proposals that the human can accept or reject.
+
+The Stage 1 vertical slice includes a scrolling fantasy world, collectible weapons, blessings, telegraphed enemies, a multi-phase boss and a gated Seal-to-Portal progression. Elias follows, intercepts attacks in guard mode and focuses damage in focus mode. WebMCP turns him from a fixed NPC into a grounded collaborator without allowing the agent to move the player, fabricate rewards or bypass the canonical engine.
+
+The implementation registers typed JSON-schema tools through `document.modelContext` or `navigator.modelContext`. `inspect_battlefield` exposes a purpose-built read model, `explain_next_objective` derives guidance from canonical quest state, and `command_elias` performs a reversible engine action. Tool results are structured, agent actions are logged, story mutations use visible proposals, and destructive rule changes request human interaction. The deterministic TypeScript `WorldEngine` remains the single source of truth for both React gameplay and WebMCP.

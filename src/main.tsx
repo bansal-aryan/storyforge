@@ -6,6 +6,7 @@ import { engine } from "./engine/instance";
 import { loadWorld, saveWorld } from "./persist/storage";
 import { useWorldStore } from "./store/useWorldStore";
 import { registerStoryforgeTools } from "./webmcp/register";
+import { setConfirmationUi } from "./webmcp/confirmation";
 
 async function bootstrap() {
   const stored = await loadWorld();
@@ -19,6 +20,7 @@ async function bootstrap() {
   }
   else engine.loadEclipseInheritance();
   useWorldStore.getState().setSnapshot(engine.snapshot());
+  setConfirmationUi({ confirmDestructive: useWorldStore.getState().askConfirmation });
 
   let saveTimer = 0;
   engine.subscribe((snapshot) => {

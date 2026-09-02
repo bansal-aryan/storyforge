@@ -1,8 +1,11 @@
 import { advanceQuestStageDef, executeAdvanceQuestStage } from "./advanceQuestStage";
 import { applyWorldRuleDef, executeApplyWorldRule } from "./applyWorldRule";
 import { checkContinuityDef, executeCheckContinuity } from "./checkContinuity";
+import { commandEliasDef, executeCommandElias } from "./commandElias";
+import { explainNextObjectiveDef, executeExplainNextObjective } from "./explainNextObjective";
 import { getAdventureStateDef, executeGetAdventureState } from "./getAdventureState";
 import { getWorldSummaryDef, executeGetWorldSummary } from "./getWorldSummary";
+import { inspectBattlefieldDef, executeInspectBattlefield } from "./inspectBattlefield";
 import { movePartyDef, executeMoveParty } from "./moveParty";
 import { playAsCharacterDef, executePlayAsCharacter } from "./playAsCharacter";
 import { queryMemoryDef, executeQueryMemory } from "./queryMemory";
@@ -10,6 +13,9 @@ import { recruitPartyMemberDef, executeRecruitPartyMember } from "./recruitParty
 import type { ToolContext } from "./types";
 
 export const TOOLS = [
+  { def: inspectBattlefieldDef, run: executeInspectBattlefield },
+  { def: explainNextObjectiveDef, run: executeExplainNextObjective },
+  { def: commandEliasDef, run: executeCommandElias },
   { def: getAdventureStateDef, run: executeGetAdventureState },
   { def: getWorldSummaryDef, run: executeGetWorldSummary },
   { def: queryMemoryDef, run: executeQueryMemory },

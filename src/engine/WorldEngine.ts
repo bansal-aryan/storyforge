@@ -399,10 +399,49 @@ export class WorldEngine {
     this.commit(next, { id: makeId("act"), at: Date.now(), actor: "human", toolName: "choose_blessing", summary: `The heir accepts the blessing of ${blessing}.` });
   }
 
-  setEliasMode(mode: "follow" | "focus" | "guard" | "hold"): void {
+  setEliasMode(
+    mode: "follow" | "focus" | "guard" | "hold",
+    opts: { actor: Actor } = { actor: "human" },
+  ): { mode: "follow" | "focus" | "guard" | "hold"; summary: string } {
     const world = this.require();
+    const game = this.requireStageOne();
+    if (!game.elias.recruited) throw new Error("Elias must be recruited before he can receive tactical commands.");
+    if (game.elias.hp <= 0) throw new Error("Elias is wounded and cannot change tactics yet.");
+    const summary = `Elias changes stance to ${mode}.`;
     const next = produce(world, (draft) => { draft.gameplay!.elias.mode = mode; });
-    this.commit(next, { id: makeId("act"), at: Date.now(), actor: "human", toolName: "set_elias_mode", summary: `Elias changes stance to ${mode}.` });
+    this.commit(next, { id: makeId("act"), at: Date.now(), actor: opts.actor, toolName: "command_elias", summary, data: { mode } });
+    return { mode, summary };
+  }
+
+  getBattlefieldState() {
+    const game = this.requireStageOne();
+    const equipped = game.inventory.find((item) => item.id === game.player.weaponId);
+    const activeEnemies = game.enemies
+      .filter((enemy) => enemy.alive)
+      .map((enemy) => ({ id: enemy.id, kind: enemy.kind, hp: enemy.hp, maxHp: enemy.maxHp, intent: enemy.intent }));
+    return {
+      stage: game.stage,
+      objective: game.objective,
+      player: { hp: game.player.hp, maxHp: game.player.maxHp, essence: game.player.essence, weapon: equipped?.name ?? game.player.weaponId },
+      elias: { recruited: game.elias.recruited, hp: game.elias.hp, maxHp: game.elias.maxHp, mode: game.elias.mode },
+      groves: { purified: game.groves.filter((grove) => grove.purified).length, total: game.groves.length },
+      enemies: activeEnemies,
+      sylvara: { awakened: game.sylvara.awakened, defeated: game.sylvara.defeated, hp: game.sylvara.hp, maxHp: game.sylvara.maxHp, phase: game.sylvara.phase, intent: game.sylvara.intent },
+      sealCollected: game.sealCollected,
+      portalActive: game.portalActive,
+      collectibleWeapons: game.weaponPickups.filter((pickup) => !pickup.collected).map((pickup) => pickup.item.name),
+    };
+  }
+
+  getNextObjectiveGuidance(): { objective: string; recommendedAction: string; reason: string } {
+    const game = this.requireStageOne();
+    if (game.stageComplete) return { objective: game.objective, recommendedAction: "Continue into the Drowned Archives.", reason: "The Stage 1 vertical slice is complete." };
+    if (game.portalActive) return { objective: game.objective, recommendedAction: "Enter the glowing Portal in the northeast.", reason: "Sylvara is defeated and the Seal of Roots is secured." };
+    if (game.sylvara.defeated && !game.sealCollected) return { objective: game.objective, recommendedAction: "Collect the Seal where Sylvara fell.", reason: "The Portal cannot activate until the Seal is claimed." };
+    if (game.sylvara.awakened) return { objective: game.objective, recommendedAction: game.elias.recruited ? "Set Elias to focus, dodge the root telegraph, and strike Sylvara." : "Recruit Elias, then confront Sylvara.", reason: `Sylvara is exposed in phase ${game.sylvara.phase}.` };
+    const unpurified = game.groves.find((grove) => !grove.purified);
+    if (unpurified) return { objective: game.objective, recommendedAction: `Travel to ${unpurified.label} and purify its blight totem.`, reason: `${game.groves.filter((grove) => grove.purified).length} of ${game.groves.length} groves are purified.` };
+    return { objective: game.objective, recommendedAction: "Defeat the remaining blighted guardians.", reason: `${game.enemies.filter((enemy) => enemy.alive).length} guardians still anchor Sylvara's shield.` };
   }
 
   combatTick(input: { player: { x: number; y: number }; elias: { x: number; y: number }; dodging: boolean; now: number }): void {

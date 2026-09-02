@@ -207,4 +207,29 @@ describe("WorldEngine", () => {
     expect(result.type).toBe("boss_shot");
     expect(engine.snapshot().gameplay!.sylvara.hp).toBeLessThan(before);
   });
+
+  it("exposes a grounded battlefield snapshot for WebMCP", () => {
+    const engine = new WorldEngine(createEclipseInheritance());
+    const state = engine.getBattlefieldState();
+    expect(state.objective).toContain("Groves");
+    expect(state.player.weapon).toBe("Heir's Crystal Sword");
+    expect(state.enemies).toHaveLength(4);
+    expect(state.portalActive).toBe(false);
+  });
+
+  it("logs a reversible WebMCP tactical command as an agent action", () => {
+    const engine = new WorldEngine(createEclipseInheritance());
+    const elias = engine.snapshot().gameplay!.elias;
+    engine.stageOneInteract({ x: elias.x, y: elias.y });
+    engine.setEliasMode("guard", { actor: "agent" });
+    expect(engine.snapshot().gameplay!.elias.mode).toBe("guard");
+    expect(engine.snapshot().activity[0]).toMatchObject({ actor: "agent", toolName: "command_elias" });
+  });
+
+  it("explains only the next objective allowed by canonical state", () => {
+    const engine = new WorldEngine(createEclipseInheritance());
+    const guidance = engine.getNextObjectiveGuidance();
+    expect(guidance.recommendedAction).toContain("West Grove");
+    expect(guidance.reason).toContain("0 of 3");
+  });
 });

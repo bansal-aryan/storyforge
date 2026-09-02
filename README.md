@@ -1,76 +1,94 @@
 # Eclipse Inheritance
 
-A browser-playable fantasy action-adventure prototype built to match the challenge specification exactly: a top-down, readable, cartoon world inspired by TheLast.io, with a human-controlled protagonist and AI companion behavior layered through WebMCP.
+Eclipse Inheritance is a browser action-RPG about collaborating with an agent-controlled ranger during live combat. The human controls the Last Heir directly; a WebMCP agent can inspect canonical battlefield state, explain the next valid objective, and change Elias's tactical stance without inventing items, skipping quest gates, or taking control of the player.
 
-This project is intentionally designed as a game first and an AI showcase second. The player is the hero. The companions are real teammates that can speak, act, and propose sensible moves without taking over the story.
+This repository contains a complete Stage 1 vertical slice set in Emberwood Glade. The larger story is designed around five Eclipse Seals, but only Stage 1 is claimed as playable here.
 
-## Core fantasy
+## Why WebMCP
 
-- Top-down playable world with direct WASD control
-- Zelda-like exploration loop in a simpler, cleaner form
-- Human protagonist with a fantasy look and readable silhouette
-- Companion agents with role-specific behavior and voice interaction
-- Stage-by-stage progression with active Portals after boss defeat
-- Browser-native deployment for judges and local play
+Traditional game companions either follow fixed scripts or make the player stop fighting to navigate tactical menus. WebMCP lets an external agent understand the live encounter through structured browser tools and help while the player remains in control.
 
-## Visual specification
+A judge can ask the agent to:
 
-The project uses a simplified TheLast.io-inspired art language:
+> Inspect the battlefield, explain what I should do next, and have Elias guard me.
 
-- rounded cartoon characters with black outlines
-- top-down or slightly elevated camera
-- high readability and large silhouettes
-- soft fantasy palette with strong contrast
-- minimal but polished HUD and UI
-- no cluttered dashboard; the world remains the focus
+The agent reads the real game state, returns grounded guidance, calls a reversible tactical command, and the result appears immediately in the HUD and WebMCP activity panel.
 
-## Game loop
+## Playable loop
 
-1. Enter the stage and explore the environment
-2. Defeat enemies and gather required items
-3. Engage the stage boss
-4. Defeat the foe and collect the Seal
-5. The Portal activates and transports the player forward
-6. Continue to the next stage with helper agent suggestions and voice interaction
+1. Explore a scrolling forest with WASD or arrow keys.
+2. Recruit Elias and collect optional weapons.
+3. Purify three blighted groves and choose blessings.
+4. Fight telegraphed enemies with quick attacks, heavy attacks, and dodges.
+5. Command Elias to follow, guard, focus, or hold.
+6. Defeat Sylvara, collect the Seal of Roots, and activate the Portal.
 
-## Exact project focus
+## WebMCP implementation
 
-This build follows the specification for:
+The app registers structured tools from `document.modelContext` or `navigator.modelContext` during startup. All tools operate on the same deterministic `WorldEngine` used by the game.
 
-- Stage 1 vertical slice first
-- correct player and Elias visuals
-- Sylvara encounter
-- Portal activation after boss defeat
-- browser-playable action loop
-- WebMCP-connected companion system
-- simple, clean UI built for judge readability and quick demoability
+The three judge-facing gameplay tools are:
 
-## Local run
+- `inspect_battlefield` — reads health, objectives, enemies, grove progress, Sylvara's phase, pickups, Seal state, and Portal state.
+- `explain_next_objective` — recommends only actions allowed by the current canonical quest state.
+- `command_elias` — changes Elias between `follow`, `guard`, `focus`, and `hold`; the reversible action is attributed to the agent and shown in the activity panel.
+
+Additional world-model tools demonstrate memory search, continuity validation, human-approved story proposals, and durable world rules. Mutating story operations create pending proposals. The player can accept or reject them in the game. Destructive rule changes use WebMCP's user-interaction callback when available.
+
+## Run locally
+
+Requirements: Node.js 20+ and pnpm 11.
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-If your environment blocks package build scripts, run:
+Open `http://127.0.0.1:5173/` in the ChatGPT desktop app's in-app browser, or Chrome 149+ with WebMCP testing enabled.
+
+For recording, `http://127.0.0.1:5173/?demo=1` skips the lore crawl and opens the WebMCP activity panel.
+
+## Controls
+
+- Move: WASD or arrow keys
+- Quick attack: Space
+- Heavy attack: F
+- Dodge: Left Shift
+- Interact or collect: E
+- Equip hotbar items: 1–9
+
+Controls can be rebound from the in-game settings panel.
+
+## Verify
 
 ```bash
-pnpm approve-builds
+pnpm test
+pnpm build
 ```
 
-Then rerun:
+The test suite covers the Stage 1 gates, combat telegraphs, Sylvara phases, weapons, blessings, Elias combat, battlefield inspection, canonical objective guidance, and agent-attributed tactical commands.
 
-```bash
-pnpm install
-pnpm dev
-```
+## Judge testing instructions
 
-## Browser target
+1. Open the public deployment in a WebMCP-capable browser.
+2. Click **Begin the inheritance**, recruit Elias near the starting area, and open **Agent** in the top navigation.
+3. Ask the browsing agent: “Inspect the battlefield, explain the next objective, and set Elias to guard.”
+4. Confirm that the browser calls `inspect_battlefield`, `explain_next_objective`, and `command_elias`.
+5. Confirm that Elias's HUD stance becomes `guard` and `command_elias` appears under **Agent activity**.
+6. Continue through Sylvara, the Seal, and the Portal to verify the deterministic stage gates.
 
-The app should run in a modern browser and be deployable for judge access via a public URL. The WebMCP-powered companion layer should be available in a compatible browser environment and gracefully degrade when unavailable.
+No account or credentials are required. Progress is stored locally in IndexedDB.
 
-## Key docs
+## Deployment
 
-- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)
-- [docs/MVP_BUILD_PLAN.md](./docs/MVP_BUILD_PLAN.md)
-- [docs/DEMO_SCRIPT.md](./docs/DEMO_SCRIPT.md)
+The app is a static Vite site with no required environment variables.
+
+- Install command: `pnpm install --frozen-lockfile`
+- Build command: `pnpm build`
+- Output directory: `dist`
+
+See [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) for the release checklist and [docs/DEMO_SCRIPT.md](./docs/DEMO_SCRIPT.md) for the judge-focused recording plan.
+
+## License
+
+MIT — see [LICENSE](./LICENSE).

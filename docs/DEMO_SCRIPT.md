@@ -1,36 +1,56 @@
-# Eclipse Inheritance Demo Script
+# Demo video plan
 
-Keep the demo under three minutes and keep it simple, playable, and clear.
+Target length: 100–120 seconds. Hard limit: under three minutes.
 
-## Demo structure
+Record from `/?demo=1` so gameplay and the WebMCP activity panel are visible immediately. Recruit Elias and position the party near a threat before recording. Do not show setup, loading, the lore crawl, or live typing.
 
-1. Introduce the game as a browser-playable fantasy action-adventure inspired by a clean top-down action RPG.
-2. Show the world: the player avatar, enemy threats, shrine, objective marker, and a minimal HUD.
-3. Show direct player control using WASD and clear action feedback.
-4. Trigger the Sylvara encounter and explain the boss logic.
-5. Show the Portal becoming active only after the defeat and Seal collection.
-6. Introduce Elias as a companion that can speak, react, and help the player without taking over the game.
-7. Demonstrate a natural-language or voice command and show the companion’s grounded response.
-8. Explain the WebMCP integration and how companion tools are tied to world state rather than free-form nonsense.
-9. Close on the broader vision: a full five-stage progression with exact story and portal-based world travel.
+## Shot list and narration
 
-## Short script
+### 0–12 seconds — prove it is a game
 
-“Eclipse Inheritance is a browser-playable fantasy action-adventure with a top-down, readable cartoon look inspired by TheLast.io. The player controls the Heir directly, explores the world, defeats enemies, and drives the story. The companions are not random assistants; they are structured teammates connected through WebMCP and grounded in the current game state.
+Show the Heir moving, dodging a telegraphed attack, and striking an enemy while Elias fights nearby.
 
-In this Stage 1 slice, the player enters Emberwood Glade, fights Sylvara, and defeats her to claim the Seal of Roots. Once the boss is down, the Portal activates and allows progress to the next stage. Elias joins at this point and can provide tactical suggestions and spoken commands.
+> This is Eclipse Inheritance, a browser action-RPG where I control the hero and a WebMCP agent supports me through a real companion inside the battle.
 
-The key idea is that the human remains in charge. Agents propose, react, and support. They do not rewrite the story or move the player without consent. That keeps the game fun, readable, and trustworthy.”
+On-screen text: `Human controls the Heir. Agent supports Elias.`
 
-## Judge-facing points
+### 12–38 seconds — centerpiece WebMCP interaction
 
-- The game is playable in the browser.
-- The visual style is simple, readable, and intentional.
-- The player controls a direct fantasy hero rather than a passive spectator.
-- The world progression is clear and deterministic.
-- The AI system is visible and grounded.
-- The project is a real game prototype with a strong story and world structure.
+Paste this prompt into the browsing agent before the shot, then show it executing:
 
-## Fallback if WebMCP is unavailable
+> Inspect the battlefield, explain my next objective, and set Elias to guard me.
 
-If the browser does not expose WebMCP in the moment, the demo should still work using a local fallback mode where the same game state and companion logic are still visible and the same actions are available through a controlled interface. The experience should remain coherent even without full WebMCP activation.
+Show the calls to `inspect_battlefield`, `explain_next_objective`, and `command_elias`. Keep the game and activity panel visible. End the clip with Elias's HUD stance reading `guard` and the activity entry appearing.
+
+> The agent is not reading pixels or guessing. WebMCP gives it structured tools over the same canonical state used by combat. It sees current health, enemies, quest gates and Sylvara's phase, then issues a reversible command to Elias.
+
+### 38–62 seconds — explain trust and control
+
+Show a pending proposal with Accept and Reject if one is available, or show the activity log and tool chips.
+
+> Tactical commands are safe and reversible, so they happen immediately and are logged. Story-changing actions become visible proposals that I must accept. The agent can help without inventing an item, skipping a boss, or rewriting the world.
+
+On-screen text: `Engine-authoritative state · Visible agent actions · Human-owned canon`
+
+### 62–100 seconds — finish the gameplay payoff
+
+Use jump cuts: Sylvara attack telegraph, Elias firing in focus mode, Sylvara defeated, Seal collected, Portal activated.
+
+> The same engine enforces every gameplay gate. Sylvara remains shielded until the groves and guardians are cleared. Her defeat reveals the Seal, collecting it activates the Portal, and only then can the story advance.
+
+### 100–112 seconds — close
+
+End on the active Portal.
+
+> WebMCP turns a scripted sidekick into a grounded collaborator while keeping the player in charge.
+
+## Editing checklist
+
+- Public YouTube visibility
+- Under three minutes
+- Voice or AI narration audible throughout
+- No copyrighted music or third-party game footage
+- Jump cuts remove every wait
+- Project working within the first 10 seconds
+- Actual WebMCP calls readable on screen
+- Production URL, not localhost, visible briefly

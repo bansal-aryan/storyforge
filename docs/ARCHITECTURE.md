@@ -2,7 +2,7 @@
 
 This project is a browser-based top-down action-RPG built around the exact visual specification in the game brief. The game language is simple, readable, and playful: a TheLast.io-inspired cartoon fantasy world with direct player control, companion AI, and stage progression that is easy to understand in a browser.
 
-The implementation must follow the specification exactly. The game is a top-down browser action-RPG called Eclipse Inheritance, with a playable Stage 1 vertical slice first, then expansion to the full five-stage quest.
+The current implementation is a top-down browser action-RPG called Eclipse Inheritance with one complete playable Stage 1 vertical slice. Stages 2–5 are world-model and narrative design targets, not currently playable content.
 
 ## Product principles
 
@@ -155,15 +155,25 @@ Portal behavior is mandatory and exact:
 - Malrik is fought first; Voss is the final boss
 - no Portal after Voss; ending sequence begins immediately
 
-## Voice and WebMCP architecture
+## Companion command and WebMCP architecture
 
-The voice system is a core feature, not an optional extra.
+Text commands are the reliable baseline. Browser speech recognition and speech synthesis provide an optional voice layer when supported.
 
-- the player can speak to any companion using push-to-talk or open mic
-- companions respond with distinct TTS voices and personalities
-- each companion understands current combat, location, and recent history
-- players can issue natural-language commands
+- the player can type or speak a command to the implemented companion, Elias
+- Elias responds through browser speech synthesis when available
+- WebMCP agents inspect current combat and quest state through structured tools
+- players can issue natural-language requests to the browsing agent
 - the system stays grounded in current world state rather than free-form off-screen behavior
+
+### Registered tool surface
+
+The judge-facing path uses three purpose-built gameplay tools:
+
+- `inspect_battlefield` reads the live encounter without mutation
+- `explain_next_objective` derives a legal next action from quest gates
+- `command_elias` applies a reversible tactical stance and logs agent attribution
+
+Additional tools expose world summaries, memory, continuity checks, party and quest proposals, companion dialogue proposals, and confirmed world rules. Story-changing proposals are displayed in the game with Accept and Reject controls.
 
 ## World engine architecture
 
