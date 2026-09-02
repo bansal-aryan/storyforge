@@ -130,24 +130,58 @@ describe("WorldEngine", () => {
     const engine = new WorldEngine(createEclipseInheritance());
     const game = engine.snapshot().gameplay!;
 
-    expect(engine.stageOneAttack({ x: game.sylvara.x, y: game.sylvara.y }).type).toBe("blocked");
-    for (const grove of game.groves) engine.stageOneInteract({ x: grove.x, y: grove.y });
+    expect(engine.stageOneAttack({ x: game.boss.x, y: game.boss.y }).type).toBe("blocked");
+    for (const grove of game.objectives) engine.stageOneInteract({ x: grove.x, y: grove.y });
     for (const enemy of game.enemies) {
       for (let hit = 0; hit < enemy.maxHp; hit += 1) engine.stageOneAttack({ x: enemy.x, y: enemy.y });
     }
-    expect(engine.snapshot().gameplay?.sylvara.awakened).toBe(true);
+    expect(engine.snapshot().gameplay?.boss.awakened).toBe(true);
 
-    for (let hit = 0; hit < game.sylvara.maxHp; hit += 1) engine.stageOneAttack({ x: game.sylvara.x, y: game.sylvara.y });
-    expect(engine.snapshot().gameplay?.sylvara.defeated).toBe(true);
+    for (let hit = 0; hit < game.boss.maxHp; hit += 1) engine.stageOneAttack({ x: game.boss.x, y: game.boss.y });
+    expect(engine.snapshot().gameplay?.boss.defeated).toBe(true);
     expect(engine.snapshot().gameplay?.portalActive).toBe(false);
 
-    engine.stageOneInteract({ x: game.sylvara.x, y: game.sylvara.y });
+    engine.stageOneInteract({ x: game.boss.x, y: game.boss.y });
     expect(engine.snapshot().gameplay?.sealCollected).toBe(true);
     expect(engine.snapshot().gameplay?.portalActive).toBe(true);
 
     engine.stageOneInteract({ x: 2070, y: 180 });
-    expect(engine.snapshot().gameplay?.stageComplete).toBe(true);
+    expect(engine.snapshot().gameplay?.stage).toBe(2);
+    expect(engine.snapshot().gameplay?.stageComplete).toBe(false);
     expect(engine.getAdventureState().quest.stageIndex).toBe(1);
+  });
+
+  it("plays every Seal phase through the final campaign ending", () => {
+    const engine = new WorldEngine(createEclipseInheritance());
+
+    for (let expectedStage = 1; expectedStage <= 5; expectedStage += 1) {
+      const stage = engine.snapshot().gameplay!;
+      expect(stage.stage).toBe(expectedStage);
+
+      if (!stage.companion.recruited) engine.stageOneInteract(stage.companion);
+      for (const objective of stage.objectives) engine.stageOneInteract(objective);
+      for (const enemy of stage.enemies) {
+        for (let hit = 0; hit < enemy.maxHp; hit += 1) engine.stageOneAttack(enemy);
+      }
+
+      expect(engine.snapshot().gameplay?.boss.awakened).toBe(true);
+      const boss = engine.snapshot().gameplay!.boss;
+      for (let hit = 0; hit < boss.maxHp; hit += 1) engine.stageOneAttack(boss);
+      engine.stageOneInteract(boss);
+
+      const cleared = engine.snapshot().gameplay!;
+      expect(cleared.sealCollected).toBe(true);
+      expect(cleared.inventory.filter((item) => item.kind === "seal")).toHaveLength(expectedStage);
+
+      if (expectedStage < 5) {
+        expect(cleared.portalActive).toBe(true);
+        engine.stageOneInteract({ x: 2070, y: 180 });
+      } else {
+        expect(cleared.portalActive).toBe(false);
+        expect(cleared.campaignComplete).toBe(true);
+        expect(engine.getAdventureState().quest.stages.every((questStage) => questStage.state === "complete")).toBe(true);
+      }
+    }
   });
 
   it("collects and equips a level weapon in the canonical hotbar inventory", () => {
@@ -162,16 +196,16 @@ describe("WorldEngine", () => {
     const engine = new WorldEngine(createEclipseInheritance());
     const enemy = engine.snapshot().gameplay!.enemies[0]!;
     const position = { x: enemy.x, y: enemy.y };
-    engine.combatTick({ player: position, elias: position, dodging: false, now: 1000 });
+    engine.combatTick({ player: position, companion: position, dodging: false, now: 1000 });
     expect(engine.snapshot().gameplay?.enemies[0]?.intent).toBe("windup");
     expect(engine.snapshot().gameplay?.player.hp).toBe(100);
-    engine.combatTick({ player: position, elias: position, dodging: false, now: 1500 });
+    engine.combatTick({ player: position, companion: position, dodging: false, now: 1500 });
     expect(engine.snapshot().gameplay?.player.hp).toBeLessThan(100);
   });
 
   it("offers and applies a blessing after purifying a grove", () => {
     const engine = new WorldEngine(createEclipseInheritance());
-    const grove = engine.snapshot().gameplay!.groves[0]!;
+    const grove = engine.snapshot().gameplay!.objectives[0]!;
     engine.stageOneInteract({ x: grove.x, y: grove.y });
     expect(engine.snapshot().gameplay?.pendingBlessing).toBe(true);
     engine.chooseBlessing("vigor");
@@ -182,30 +216,30 @@ describe("WorldEngine", () => {
   it("starts Sylvara's attack scheduler and damages the heir after a telegraph", () => {
     const engine = new WorldEngine(createEclipseInheritance());
     const game = engine.snapshot().gameplay!;
-    for (const grove of game.groves) engine.stageOneInteract({ x: grove.x, y: grove.y });
+    for (const grove of game.objectives) engine.stageOneInteract({ x: grove.x, y: grove.y });
     for (const enemy of game.enemies) for (let hit = 0; hit < enemy.maxHp; hit += 1) engine.stageOneAttack({ x: enemy.x, y: enemy.y });
-    const awakened = engine.snapshot().gameplay!.sylvara;
+    const awakened = engine.snapshot().gameplay!.boss;
     expect(awakened.intent).toBe("idle");
     const position = { x: awakened.x, y: awakened.y };
-    engine.combatTick({ player: position, elias: position, dodging: false, now: awakened.attackReadyAt + 1 });
-    const telegraph = engine.snapshot().gameplay!.sylvara;
-    expect(telegraph.intent).toBe("roots");
+    engine.combatTick({ player: position, companion: position, dodging: false, now: awakened.attackReadyAt + 1 });
+    const telegraph = engine.snapshot().gameplay!.boss;
+    expect(telegraph.intent).toBe("strike");
     const health = engine.snapshot().gameplay!.player.hp;
-    engine.combatTick({ player: position, elias: position, dodging: false, now: telegraph.attackReadyAt + 1 });
+    engine.combatTick({ player: position, companion: position, dodging: false, now: telegraph.attackReadyAt + 1 });
     expect(engine.snapshot().gameplay!.player.hp).toBeLessThan(health);
   });
 
   it("lets a focused Elias contribute damage against Sylvara", () => {
     const engine = new WorldEngine(createEclipseInheritance());
     const game = engine.snapshot().gameplay!;
-    engine.stageOneInteract({ x: game.elias.x, y: game.elias.y });
-    for (const grove of game.groves) engine.stageOneInteract({ x: grove.x, y: grove.y });
+    engine.stageOneInteract({ x: game.companion.x, y: game.companion.y });
+    for (const grove of game.objectives) engine.stageOneInteract({ x: grove.x, y: grove.y });
     for (const enemy of game.enemies) for (let hit = 0; hit < enemy.maxHp; hit += 1) engine.stageOneAttack({ x: enemy.x, y: enemy.y });
-    engine.setEliasMode("focus");
-    const before = engine.snapshot().gameplay!.sylvara.hp;
-    const result = engine.eliasCombatTick({ x: game.sylvara.x, y: game.sylvara.y });
+    engine.setCompanionMode("focus");
+    const before = engine.snapshot().gameplay!.boss.hp;
+    const result = engine.companionCombatTick({ x: game.boss.x, y: game.boss.y });
     expect(result.type).toBe("boss_shot");
-    expect(engine.snapshot().gameplay!.sylvara.hp).toBeLessThan(before);
+    expect(engine.snapshot().gameplay!.boss.hp).toBeLessThan(before);
   });
 
   it("exposes a grounded battlefield snapshot for WebMCP", () => {
@@ -219,11 +253,11 @@ describe("WorldEngine", () => {
 
   it("logs a reversible WebMCP tactical command as an agent action", () => {
     const engine = new WorldEngine(createEclipseInheritance());
-    const elias = engine.snapshot().gameplay!.elias;
+    const elias = engine.snapshot().gameplay!.companion;
     engine.stageOneInteract({ x: elias.x, y: elias.y });
-    engine.setEliasMode("guard", { actor: "agent" });
-    expect(engine.snapshot().gameplay!.elias.mode).toBe("guard");
-    expect(engine.snapshot().activity[0]).toMatchObject({ actor: "agent", toolName: "command_elias" });
+    engine.setCompanionMode("guard", { actor: "agent" });
+    expect(engine.snapshot().gameplay!.companion.mode).toBe("guard");
+    expect(engine.snapshot().activity[0]).toMatchObject({ actor: "agent", toolName: "command_companion" });
   });
 
   it("explains only the next objective allowed by canonical state", () => {

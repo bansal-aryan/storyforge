@@ -1,4 +1,5 @@
 import type { Entity, QuestStage, WorldSnapshot } from "../types/world";
+import { createStageGameplay } from "./campaign";
 
 const locationIds = ["loc_emberwood", "loc_archives", "loc_forge", "loc_veilspire", "loc_citadel"];
 
@@ -66,34 +67,9 @@ export function createEclipseWorld(now = Date.now()): WorldSnapshot {
       map: locationIds.map((entityId, index) => ({ entityId, x: 12 + index * 20, y: 68 - index * 11, unlocked: index === 0, visited: index === 0, stage: index })),
       quest: { title: "Eclipse Inheritance", stageIndex: 0, stages },
     },
-    gameplay: {
-      stage: 1,
-      player: { x: 240, y: 720, hp: 100, maxHp: 100, essence: 80, weaponId: "wpn_heir_sword" },
-      groves: [
-        { id: "grove-1", x: 520, y: 320, label: "West Grove", purified: false },
-        { id: "grove-2", x: 1120, y: 880, label: "South Grove", purified: false },
-        { id: "grove-3", x: 1700, y: 350, label: "Heart Grove", purified: false },
-      ],
-      enemies: [
-        { id: "wolf-1", x: 650, y: 650, hp: 4, maxHp: 4, alive: true, kind: "wolf", intent: "idle", attackReadyAt: 0 },
-        { id: "wolf-2", x: 980, y: 440, hp: 4, maxHp: 4, alive: true, kind: "wolf", intent: "idle", attackReadyAt: 0 },
-        { id: "vine-1", x: 1370, y: 870, hp: 5, maxHp: 5, alive: true, kind: "vine", intent: "idle", attackReadyAt: 0 },
-        { id: "vine-2", x: 1580, y: 600, hp: 5, maxHp: 5, alive: true, kind: "vine", intent: "idle", attackReadyAt: 0 },
-      ],
-      elias: { x: 400, y: 600, hp: 100, maxHp: 100, recruited: false, weaponId: "wpn_elias_bow", mode: "follow" },
-      sylvara: { x: 1900, y: 360, hp: 12, maxHp: 12, phase: 1, attackReadyAt: 0, intent: "shielded", awakened: false, defeated: false },
-      sealCollected: false,
-      inventory: [{ id: "wpn_heir_sword", name: "Heir's Crystal Sword", kind: "weapon", icon: "⚔", description: "A short sword with a blue crystal pommel." }],
-      weaponPickups: [
-        { id: "pickup_ember_axe", x: 900, y: 220, collected: false, item: { id: "wpn_ember_axe", name: "Emberwood Axe", kind: "weapon", icon: "◆", description: "A rescued woodsman's axe, heavy enough to stagger blighted foes." } },
-        { id: "pickup_root_bow", x: 1500, y: 1030, collected: false, item: { id: "wpn_root_bow", name: "Rootstring Bow", kind: "weapon", icon: "➶", description: "A living bow grown from an uncorrupted root." } },
-      ],
-      blessings: [],
-      pendingBlessing: false,
-      portalActive: false,
-      stageComplete: false,
-      objective: "Purify the three Blighted Groves.",
-      storyLine: "The roots whisper beneath the ruins of your childhood village.",
-    },
+    gameplay: createStageGameplay(1, [
+      { id: "wpn_heir_sword", name: "Heir's Crystal Sword", kind: "weapon", icon: "⚔", description: "A short sword with a blue crystal pommel." },
+      { id: "wpn_root_bow", name: "Rootstring Bow", kind: "weapon", icon: "➶", description: "A living bow grown from an uncorrupted root." },
+    ]),
   };
 }

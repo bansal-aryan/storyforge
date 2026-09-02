@@ -67,7 +67,7 @@ export default function App() {
   const game = snapshot?.gameplay;
   const keys = useKeyState();
   const [player, setPlayer] = useState<Point>(() => game?.player ?? { x: 240, y: 720 });
-  const [eliasVisual, setEliasVisual] = useState<Point>(() => game?.elias ?? { x: 400, y: 600 });
+  const [eliasVisual, setEliasVisual] = useState<Point>(() => game?.companion ?? { x: 400, y: 600 });
   const [viewport, setViewport] = useState({ width: window.innerWidth, height: window.innerHeight - 92 });
   const [heroAttacking, setHeroAttacking] = useState(false);
   const [eliasAttacking, setEliasAttacking] = useState(false);
@@ -77,7 +77,7 @@ export default function App() {
   const [dodging, setDodging] = useState(false);
   const [showIntro, setShowIntro] = useState(() => !new URLSearchParams(window.location.search).has("demo") && sessionStorage.getItem("storyforge:intro-seen:v1") !== "yes");
   const [agentPanelOpen, setAgentPanelOpen] = useState(() => new URLSearchParams(window.location.search).has("demo"));
-  const [voiceLog, setVoiceLog] = useState<string[]>(["Voice link ready. Find Elias to bring him into the party."]);
+  const [voiceLog, setVoiceLog] = useState<string[]>(["Companion link ready. Recruit your ally to issue tactical commands."]);
   const [voiceInput, setVoiceInput] = useState("");
   const [micEnabled, setMicEnabled] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
@@ -94,12 +94,21 @@ export default function App() {
   const dodgingRef = useRef(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const previousHeroHp = useRef(game?.player.hp ?? 100);
-  const previousEliasHp = useRef(game?.elias.hp ?? 100);
+  const previousEliasHp = useRef(game?.companion.hp ?? 100);
   const enemyHpRef = useRef<Record<string, number>>(Object.fromEntries(game?.enemies.map((enemy) => [enemy.id, enemy.hp]) ?? []));
 
   useEffect(() => { playerRef.current = player; }, [player]);
   useEffect(() => { eliasRef.current = eliasVisual; }, [eliasVisual]);
-  useEffect(() => { if (game && !game.elias.recruited) setEliasVisual({ x: game.elias.x, y: game.elias.y }); }, [game?.elias.recruited, game?.elias.x, game?.elias.y]);
+  useEffect(() => {
+    if (!game) return;
+    playerRef.current = { x: game.player.x, y: game.player.y };
+    eliasRef.current = { x: game.companion.x, y: game.companion.y };
+    setPlayer(playerRef.current);
+    setEliasVisual(eliasRef.current);
+    portalTriggeredRef.current = false;
+    setVoiceLog([`${game.biome.name}: find ${game.companion.name} and break ${game.boss.name}'s defenses.`]);
+  }, [game?.stage]);
+  useEffect(() => { if (game && !game.companion.recruited) setEliasVisual({ x: game.companion.x, y: game.companion.y }); }, [game?.companion.recruited, game?.companion.x, game?.companion.y]);
   useEffect(() => {
     if (game && game.player.hp === 100 && game.player.x === 240 && game.player.y === 720 && distanceBetween(playerRef.current, game.player) > 20) setPlayer({ x: game.player.x, y: game.player.y });
   }, [game?.player.hp, game?.player.x, game?.player.y]);
@@ -110,10 +119,10 @@ export default function App() {
   useEffect(() => {
     if (!game) return;
     if (game.player.hp < previousHeroHp.current) { setHeroDamaged(true); window.setTimeout(() => setHeroDamaged(false), 360); }
-    if (game.elias.hp < previousEliasHp.current) { setEliasDamaged(true); window.setTimeout(() => setEliasDamaged(false), 360); }
+    if (game.companion.hp < previousEliasHp.current) { setEliasDamaged(true); window.setTimeout(() => setEliasDamaged(false), 360); }
     const struck = game.enemies.find((enemy) => enemy.hp < (enemyHpRef.current[enemy.id] ?? enemy.hp));
     if (struck) { setHitEnemyId(struck.id); window.setTimeout(() => setHitEnemyId(null), 300); }
-    previousHeroHp.current = game.player.hp; previousEliasHp.current = game.elias.hp;
+    previousHeroHp.current = game.player.hp; previousEliasHp.current = game.companion.hp;
     enemyHpRef.current = Object.fromEntries(game.enemies.map((enemy) => [enemy.id, enemy.hp]));
   }, [game]);
 
@@ -127,7 +136,7 @@ export default function App() {
     if (!game || game.stageComplete) return;
     const result = engine.stageOneInteract(playerRef.current);
     if (result.type !== "none") speak(result.summary);
-    if (result.type === "elias") setVoiceLog((previous) => ["Elias joined the party. His commands are now grounded in canonical world state.", ...previous].slice(0, 4));
+    if (result.type === "companion") setVoiceLog((previous) => [`${game.companion.name} joined the party. Their commands are grounded in canonical world state.`, ...previous].slice(0, 4));
   }, [game, speak]);
 
   const handleAttack = useCallback(() => {
@@ -181,7 +190,7 @@ export default function App() {
         const collides = obstacles.some((rect) => { const nearestX = clamp(candidate.x, rect.x, rect.x + rect.w); const nearestY = clamp(candidate.y, rect.y, rect.y + rect.h); return (candidate.x - nearestX) ** 2 + (candidate.y - nearestY) ** 2 < PLAYER_SIZE ** 2; });
         if (!collides) { playerRef.current = candidate; setPlayer(candidate); }
       }
-      if (game.elias.recruited && game.elias.mode !== "hold") {
+      if (game.companion.recruited && game.companion.mode !== "hold") {
         const target = { x: playerRef.current.x - 38, y: playerRef.current.y + 28 };
         const currentElias = eliasRef.current;
         const distance = distanceBetween(currentElias, target);
@@ -191,8 +200,8 @@ export default function App() {
         setEliasVisual(nextElias);
       }
       if (time - lastPositionSync > 250) { engine.setPlayerPosition(playerRef.current); lastPositionSync = time; }
-      if (time - combatTickRef.current > 120) { combatTickRef.current = time; engine.combatTick({ player: playerRef.current, elias: eliasRef.current, dodging: dodgingRef.current, now: Date.now() }); }
-      if (game.elias.recruited && game.elias.hp > 0 && time - eliasAttackRef.current > 900) { eliasAttackRef.current = time; const result = engine.eliasCombatTick(eliasRef.current); if (result.type !== "idle") { setEliasAttacking(true); window.setTimeout(() => setEliasAttacking(false), 300); } }
+      if (time - combatTickRef.current > 120) { combatTickRef.current = time; engine.combatTick({ player: playerRef.current, companion: eliasRef.current, dodging: dodgingRef.current, now: Date.now() }); }
+      if (game.companion.recruited && game.companion.hp > 0 && time - eliasAttackRef.current > 900) { eliasAttackRef.current = time; const result = engine.companionCombatTick(eliasRef.current); if (result.type !== "idle") { setEliasAttacking(true); window.setTimeout(() => setEliasAttacking(false), 300); } }
       if (game.portalActive && !portalTriggeredRef.current && distanceBetween(playerRef.current, PORTAL_POINT) < 28) { portalTriggeredRef.current = true; engine.stageOneInteract(playerRef.current); }
       raf = requestAnimationFrame(tick);
     };
@@ -202,12 +211,12 @@ export default function App() {
   const sendToElias = useCallback((message: string) => {
     if (!message.trim() || !game) return;
     const lowered = message.toLowerCase();
-    if (lowered.includes("hold")) engine.setEliasMode("hold");
-    else if (lowered.includes("guard") || lowered.includes("protect")) engine.setEliasMode("guard");
-    else if (lowered.includes("focus") || lowered.includes("attack")) engine.setEliasMode("focus");
-    else if (lowered.includes("follow")) engine.setEliasMode("follow");
-    const response = engine.getEliasResponse(message);
-    setVoiceLog((previous) => [`You: ${message}`, `Elias: ${response}`, ...previous].slice(0, 4)); speak(response); setVoiceInput("");
+    if (lowered.includes("hold")) engine.setCompanionMode("hold");
+    else if (lowered.includes("guard") || lowered.includes("protect")) engine.setCompanionMode("guard");
+    else if (lowered.includes("focus") || lowered.includes("attack")) engine.setCompanionMode("focus");
+    else if (lowered.includes("follow")) engine.setCompanionMode("follow");
+    const response = engine.getCompanionResponse(message);
+    setVoiceLog((previous) => [`You: ${message}`, `${game.companion.name}: ${response}`, ...previous].slice(0, 4)); speak(response); setVoiceInput("");
   }, [game, speak]);
 
   const startVoiceChat = () => {
@@ -221,8 +230,9 @@ export default function App() {
 
   const closeIntro = () => { sessionStorage.setItem("storyforge:intro-seen:v1", "yes"); setShowIntro(false); };
   if (!snapshot || !game) return <div className="loading-screen">Awakening the inheritance…</div>;
-  const purifiedCount = game.groves.filter((grove) => grove.purified).length;
+  const completedCount = game.objectives.filter((objective) => objective.completed).length;
   const aliveEnemies = game.enemies.filter((enemy) => enemy.alive).length;
+  const companionGlyph = game.companion.role.includes("Mage") ? "✧" : game.companion.role.includes("Golem") ? "◆" : game.companion.role.includes("Monk") ? "⌁" : "➶";
   const pendingProposals = snapshot.proposals.filter((proposal) => proposal.status === "pending").slice(0, 3);
   const agentActivity = snapshot.activity.filter((entry) => entry.actor === "agent").slice(0, 5);
   const camera = { x: clamp(viewport.width / 2 - player.x, viewport.width - WORLD.width, 0), y: clamp(viewport.height / 2 - player.y, viewport.height - WORLD.height, 0) };
@@ -231,37 +241,37 @@ export default function App() {
     {showIntro && <StoryCrawl onFinish={closeIntro} />}
     {confirmation && <div className="controls-backdrop" role="dialog" aria-modal="true" aria-label={confirmation.title}><section className="agent-confirmation"><small>WebMCP requests approval</small><h2>{confirmation.title}</h2><p>{confirmation.body}</p><div><button onClick={() => resolveConfirmation(false)}>Reject</button><button className="approve" onClick={() => resolveConfirmation(true)}>Approve</button></div></section></div>}
     {controlsOpen && <div className="controls-backdrop" role="dialog" aria-label="Edit game controls"><section className="controls-modal"><div className="controls-heading"><div><small>Settings</small><h2>Controls</h2></div><button onClick={() => { setControlsOpen(false); setListeningFor(null); }}>×</button></div><p>Select an action, then press any key to rebind it.</p><div className="control-list">{(Object.keys(controlLabels) as ControlAction[]).map((action) => <div className="control-row" key={action}><span>{controlLabels[action]}</span><button className={listeningFor === action ? "listening" : ""} onClick={() => setListeningFor(action)}>{listeningFor === action ? "Press a key…" : prettyKey(controls[action])}</button></div>)}</div><div className="controls-actions"><button onClick={() => { setControls(defaultControls); localStorage.setItem("storyforge:controls:v1", JSON.stringify(defaultControls)); }}>Restore defaults</button><button className="primary-action" onClick={() => setControlsOpen(false)}>Done</button></div></section></div>}
-    {game.pendingBlessing && <div className="blessing-backdrop"><section className="blessing-modal"><small>The First Tree answers</small><h2>Choose a blessing</h2><p>Each purified grove restores a fragment of your inheritance.</p><div className="blessing-grid"><button disabled={game.blessings.includes("vigor")} onClick={() => engine.chooseBlessing("vigor")}><b>♥</b><strong>Vigor</strong><span>+20 maximum health</span></button><button disabled={game.blessings.includes("fury")} onClick={() => engine.chooseBlessing("fury")}><b>✦</b><strong>Fury</strong><span>Weapons deal +1 damage</span></button><button disabled={game.blessings.includes("wind")} onClick={() => engine.chooseBlessing("wind")}><b>◌</b><strong>Wind</strong><span>Move faster through the wilds</span></button><button disabled={game.blessings.includes("bond")} onClick={() => engine.chooseBlessing("bond")}><b>➶</b><strong>Bond</strong><span>Elias gains health and double damage</span></button></div></section></div>}
+    {game.pendingBlessing && <div className="blessing-backdrop"><section className="blessing-modal"><small>{game.seal.name} resonates</small><h2>Choose a blessing</h2><p>Each restored objective returns a fragment of your inheritance.</p><div className="blessing-grid"><button disabled={game.blessings.includes("vigor")} onClick={() => engine.chooseBlessing("vigor")}><b>♥</b><strong>Vigor</strong><span>+20 maximum health</span></button><button disabled={game.blessings.includes("fury")} onClick={() => engine.chooseBlessing("fury")}><b>✦</b><strong>Fury</strong><span>Weapons deal +1 damage</span></button><button disabled={game.blessings.includes("wind")} onClick={() => engine.chooseBlessing("wind")}><b>◌</b><strong>Wind</strong><span>Move faster through the realm</span></button><button disabled={game.blessings.includes("bond")} onClick={() => engine.chooseBlessing("bond")}><b>➶</b><strong>Bond</strong><span>{game.companion.name} gains health and double damage</span></button></div></section></div>}
     <div className="minimal-shell" aria-hidden={showIntro}>
       <nav className="hud-nav" aria-label="Game status">
-        <div className="hud-brand"><strong>Eclipse</strong><span>Emberwood</span></div>
+        <div className="hud-brand"><strong>Stage {game.stage}</strong><span>{game.biome.name}</span></div>
         <section className="hud-section player-hud"><div className="hud-label"><span>Last Heir</span><b>{game.player.hp}/{game.player.maxHp}</b></div><div className="mini-meter friendly"><i style={{ width: `${(game.player.hp / game.player.maxHp) * 100}%` }} /></div><small>{game.inventory.find((item) => item.id === game.player.weaponId)?.name} · {game.player.essence} essence</small></section>
         <section className="hud-section objective-hud"><span>Current objective</span><strong>{game.objective}</strong></section>
-        <section className="hud-section elias-hud"><div className="hud-label"><span>Elias · {game.elias.mode}</span><b>{game.elias.recruited ? `${game.elias.hp}/${game.elias.maxHp}` : "—"}</b></div><div className="mini-meter friendly"><i style={{ width: `${game.elias.recruited ? (game.elias.hp / game.elias.maxHp) * 100 : 0}%` }} /></div><small>{game.elias.recruited ? "Ranger active" : "Not recruited"}</small></section>
-        <section className="hud-section progress-hud"><span>Stage progress</span><strong>{purifiedCount}/3 groves · {aliveEnemies} threats</strong><small>{game.sealCollected ? "Seal secured" : game.portalActive ? "Portal active" : "Portal dormant"}</small></section>
+        <section className="hud-section elias-hud"><div className="hud-label"><span>{game.companion.name} · {game.companion.mode}</span><b>{game.companion.recruited ? `${game.companion.hp}/${game.companion.maxHp}` : "—"}</b></div><div className="mini-meter friendly"><i style={{ width: `${game.companion.recruited ? (game.companion.hp / game.companion.maxHp) * 100 : 0}%` }} /></div><small>{game.companion.recruited ? `${game.companion.role} active` : "Not recruited"}</small></section>
+        <section className="hud-section progress-hud"><span>{game.biome.subtitle}</span><strong>{completedCount}/3 objectives · {aliveEnemies} threats</strong><small>{game.campaignComplete ? "Dawn restored" : game.sealCollected ? "Seal secured" : game.portalActive ? "Portal active" : "Boss shielded"}</small></section>
         <div className="hud-actions"><span className={`mcp-light ${webmcp}`} title={`WebMCP ${webmcp}`} /><button className={agentPanelOpen ? "active" : ""} onClick={() => setAgentPanelOpen((open) => !open)}>Agent</button><button onClick={() => setControlsOpen(true)}>Controls</button><button onClick={() => setShowIntro(true)}>Lore</button></div>
       </nav>
-      <main className={`world-panel expanded-world ${game.stageComplete ? "stage-two-threshold" : ""}`}>
+      <main className={`world-panel expanded-world theme-${game.biome.theme} ${game.campaignComplete ? "campaign-complete" : ""}`}>
         <div className="camera-layer" style={{ width: WORLD.width, height: WORLD.height, transform: `translate3d(${camera.x}px, ${camera.y}px, 0)` }}>
         <div className="terrain" /><div className="forest-mist mist-one" /><div className="forest-mist mist-two" /><div className="forest-path path-main" /><div className="forest-path path-branch" />
         <div className="world-boundary boundary-north" /><div className="world-boundary boundary-west" /><div className="world-boundary boundary-east" /><div className="world-boundary boundary-south"><span>Uncrossable Moonwater</span></div>
         {forestDecor.map(([x, y, kind], index) => <div className={`forest-decor ${kind}`} key={`${kind}-${index}`} style={{ left: x, top: y }} />)}
         <div className="village-ruin ruin-top" /><div className="village-ruin ruin-mid" /><div className="village-ruin ruin-bottom" /><div className="ancient-shrine"><span>✧</span></div>
         {obstacles.map((rect, index) => <div key={index} className={`obstacle hard-obstacle formation-${index % 3}`} style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }} />)}
-        {game.groves.map((grove) => <div key={grove.id} className={`totem ${grove.purified ? "purified" : "corrupted"}`} style={{ left: grove.x, top: grove.y }} title={grove.label} />)}
-        <div className={`portal ${game.portalActive ? "active" : "inactive"}`} style={{ left: PORTAL_POINT.x, top: PORTAL_POINT.y }} />
+        {game.objectives.map((objective) => <div key={objective.id} className={`totem stage-objective ${objective.completed ? "purified" : "corrupted"}`} style={{ left: objective.x, top: objective.y }} title={objective.label}><small>{objective.label}</small></div>)}
+        {game.stage < 5 && <div className={`portal ${game.portalActive ? "active" : "inactive"}`} style={{ left: PORTAL_POINT.x, top: PORTAL_POINT.y }} />}
         {game.weaponPickups.filter((pickup) => !pickup.collected).map((pickup) => <div className="weapon-pickup" key={pickup.id} style={{ left: pickup.x, top: pickup.y }} title={`${pickup.item.name} — press ${prettyKey(controls.interact)}`}><span>{pickup.item.icon}</span><small>{pickup.item.name}</small></div>)}
-        <div className={`${game.elias.recruited ? "companion-avatar elias-avatar friendly-unit" : "companion-ghost friendly-unit"} ${eliasAttacking ? "unit-attacking" : ""} ${eliasDamaged ? "unit-damaged" : ""}`} style={{ left: eliasVisual.x, top: eliasVisual.y }}><div className="unit-health friendly"><i style={{ width: `${(game.elias.hp / game.elias.maxHp) * 100}%` }} /></div><span className="held-weapon bow">➶</span></div>
-        {!game.sylvara.defeated && <div className={`boss-avatar enemy-unit phase-${game.sylvara.phase} intent-${game.sylvara.intent} ${game.sylvara.awakened ? "awakened" : "shielded"} ${heroAttacking && distanceBetween(player, game.sylvara) < 65 ? "unit-hit" : ""}`} style={{ left: game.sylvara.x, top: game.sylvara.y }}><div className="unit-health enemy"><i style={{ width: `${(game.sylvara.hp / game.sylvara.maxHp) * 100}%` }} /></div><span className="sylvara-crown">♠</span><small className="boss-phase">Phase {game.sylvara.phase}</small>{(game.sylvara.intent === "roots" || game.sylvara.intent === "summon") && <span className="boss-telegraph">{game.sylvara.intent === "roots" ? "ROOT STORM" : "SUMMONING"}</span>}</div>}
-        {game.sylvara.defeated && !game.sealCollected && <div className="seal-pickup" style={{ left: game.sylvara.x, top: game.sylvara.y }} title="Seal of Roots" />}
+        <div className={`${game.companion.recruited ? "companion-avatar elias-avatar friendly-unit" : "companion-ghost friendly-unit"} companion-${game.stage} ${eliasAttacking ? "unit-attacking" : ""} ${eliasDamaged ? "unit-damaged" : ""}`} style={{ left: eliasVisual.x, top: eliasVisual.y }} title={game.companion.name}><div className="unit-health friendly"><i style={{ width: `${(game.companion.hp / game.companion.maxHp) * 100}%` }} /></div><span className="held-weapon bow">{companionGlyph}</span></div>
+        {!game.boss.defeated && <div className={`boss-avatar enemy-unit phase-${game.boss.phase} intent-${game.boss.intent} ${game.boss.awakened ? "awakened" : "shielded"} ${heroAttacking && distanceBetween(player, game.boss) < 65 ? "unit-hit" : ""}`} style={{ left: game.boss.x, top: game.boss.y }}><div className="unit-health enemy"><i style={{ width: `${(game.boss.hp / game.boss.maxHp) * 100}%` }} /></div><span className="sylvara-crown">♠</span><small className="boss-phase">{game.boss.name} · Phase {game.boss.phase}</small>{(game.boss.intent === "strike" || game.boss.intent === "summon") && <span className="boss-telegraph">{game.boss.intent === "strike" ? "POWER STRIKE" : "SUMMONING"}</span>}</div>}
+        {game.boss.defeated && !game.sealCollected && <div className="seal-pickup" style={{ left: game.boss.x, top: game.boss.y }} title={game.seal.name}>{game.seal.icon}</div>}
         {game.enemies.filter((enemy) => enemy.alive).map((enemy) => <div key={enemy.id} className={`enemy-avatar enemy-unit styled-enemy intent-${enemy.intent} ${enemy.kind} ${hitEnemyId === enemy.id ? "unit-hit" : ""}`} style={{ left: enemy.x, top: enemy.y }}><div className="unit-health enemy"><i style={{ width: `${(enemy.hp / enemy.maxHp) * 100}%` }} /></div><span className="enemy-face"><i /><i /></span><span className="enemy-detail" />{enemy.intent === "windup" && <span className="attack-telegraph">!</span>}</div>)}
         <div className={`hero-avatar friendly-unit ${heroAttacking ? "unit-attacking" : ""} ${heroDamaged ? "unit-damaged" : ""} ${dodging ? "unit-dodging" : ""}`} style={{ left: player.x, top: player.y }}><div className="unit-health friendly"><i style={{ width: `${(game.player.hp / game.player.maxHp) * 100}%` }} /></div><span className={`held-weapon ${game.player.weaponId}`}>⚔</span></div>
         </div>
         <div className="world-message">{game.storyLine}</div>
-        {agentPanelOpen && <aside className="agent-panel" aria-label="WebMCP agent activity"><header><div><small>Live collaboration</small><strong>WebMCP Agent</strong></div><span className={`agent-status ${webmcp}`}>{webmcp}</span></header><p className="agent-explainer">The agent reads canonical battle state and issues structured, logged commands. Story-changing proposals stay yours to approve.</p><div className="agent-tools"><code>inspect_battlefield</code><code>command_elias</code><code>explain_next_objective</code></div>{pendingProposals.length > 0 && <section><h3>Needs your decision</h3>{pendingProposals.map((proposal) => <article className="proposal-row" key={proposal.id}><div><small>{proposal.toolName}</small><p>{proposal.summary}</p></div><div><button onClick={() => engine.rejectProposal(proposal.id)}>Reject</button><button className="approve" onClick={() => engine.applyProposal(proposal.id)}>Accept</button></div></article>)}</section>}<section><h3>Agent activity</h3>{agentActivity.length ? agentActivity.map((entry) => <article className="activity-row" key={entry.id}><code>{entry.toolName ?? "agent"}</code><span>{entry.summary}</span></article>) : <p className="agent-empty">Waiting for the first WebMCP tool call. Ask the agent to inspect the battlefield.</p>}</section></aside>}
-        <div className="companion-command" title={voiceLog[0]}><div className="stance-buttons">{(["follow", "focus", "guard", "hold"] as const).map((mode) => <button key={mode} disabled={!game.elias.recruited} className={game.elias.mode === mode ? "active" : ""} onClick={() => engine.setEliasMode(mode)}>{mode}</button>)}</div><input value={voiceInput} disabled={!game.elias.recruited} onChange={(event) => setVoiceInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") sendToElias(voiceInput); }} placeholder={game.elias.recruited ? "Command Elias…" : "Recruit Elias to issue commands"} /><button disabled={!game.elias.recruited} onClick={startVoiceChat}>{micEnabled ? "Listening" : "Voice"}</button></div>
+        {agentPanelOpen && <aside className="agent-panel" aria-label="WebMCP agent activity"><header><div><small>Live collaboration</small><strong>WebMCP Agent</strong></div><span className={`agent-status ${webmcp}`}>{webmcp}</span></header><p className="agent-explainer">The agent reads canonical battle state and issues structured, logged commands. Story-changing proposals stay yours to approve.</p><div className="agent-tools"><code>inspect_battlefield</code><code>command_companion</code><code>explain_next_objective</code></div>{pendingProposals.length > 0 && <section><h3>Needs your decision</h3>{pendingProposals.map((proposal) => <article className="proposal-row" key={proposal.id}><div><small>{proposal.toolName}</small><p>{proposal.summary}</p></div><div><button onClick={() => engine.rejectProposal(proposal.id)}>Reject</button><button className="approve" onClick={() => engine.applyProposal(proposal.id)}>Accept</button></div></article>)}</section>}<section><h3>Agent activity</h3>{agentActivity.length ? agentActivity.map((entry) => <article className="activity-row" key={entry.id}><code>{entry.toolName ?? "agent"}</code><span>{entry.summary}</span></article>) : <p className="agent-empty">Waiting for the first WebMCP tool call. Ask the agent to inspect the battlefield.</p>}</section></aside>}
+        <div className="companion-command" title={voiceLog[0]}><div className="stance-buttons">{(["follow", "focus", "guard", "hold"] as const).map((mode) => <button key={mode} disabled={!game.companion.recruited} className={game.companion.mode === mode ? "active" : ""} onClick={() => engine.setCompanionMode(mode)}>{mode}</button>)}</div><input value={voiceInput} disabled={!game.companion.recruited} onChange={(event) => setVoiceInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") sendToElias(voiceInput); }} placeholder={game.companion.recruited ? `Command ${game.companion.name}…` : `Recruit ${game.companion.name} to issue commands`} /><button disabled={!game.companion.recruited} onClick={startVoiceChat}>{micEnabled ? "Listening" : "Voice"}</button></div>
         <div className="hotbar" aria-label="Inventory hotbar">{game.inventory.map((item, index) => <button key={item.id} className={`hotbar-slot ${item.id === game.player.weaponId ? "equipped" : ""} ${item.kind}`} title={item.description} onClick={() => { if (item.kind === "weapon") engine.equipWeapon(item.id); }}><kbd>{index + 1}</kbd><span>{item.icon}</span><small>{item.name}</small></button>)}{Array.from({ length: Math.max(0, 5 - game.inventory.length) }, (_, index) => <div className="hotbar-slot empty" key={`empty-${index}`}><kbd>{game.inventory.length + index + 1}</kbd></div>)}</div>
-        {game.stageComplete && <div className="stage-complete-card"><small>Stage II awakened</small><strong>The Drowned Archives</strong><p>The playable vertical slice ends at the flooded threshold.</p></div>}
+        {game.campaignComplete && <div className="stage-complete-card ending-card"><small>The eclipse is broken</small><strong>Dawn Inherited</strong><p>Five Seals unite. The companions survive, Voss falls, and light returns to the five realms.</p></div>}
       </main>
     </div>
   </div>;

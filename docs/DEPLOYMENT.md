@@ -16,9 +16,9 @@
 - The lore crawl can be skipped.
 - `/?demo=1` opens directly on gameplay with the Agent panel visible.
 - The WebMCP status reads available in a supported browser.
-- The agent discovers `inspect_battlefield`, `explain_next_objective`, and `command_elias`.
-- A `command_elias` call changes the HUD stance and appears in Agent activity.
-- The full Sylvara → Seal → Portal path works.
+- The agent discovers `inspect_battlefield`, `explain_next_objective`, and `command_companion`.
+- A `command_companion` call changes the HUD stance and appears in Agent activity.
+- The full five-realm path works: each boss unlocks its Seal, each of the first four Seals awakens the next Portal, and Voss's Seal ends the campaign.
 - Refreshing preserves progress.
 - A fresh profile begins from a clean save.
 

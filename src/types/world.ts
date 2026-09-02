@@ -119,14 +119,17 @@ export interface AdventureState {
   };
 }
 
-export interface StageOneEnemy {
+export type CampaignStage = 1 | 2 | 3 | 4 | 5;
+export type EnemyKind = "wolf" | "vine" | "ink" | "wraith" | "forge" | "sentinel" | "storm" | "acolyte" | "shadow" | "knight";
+
+export interface StageEnemy {
   id: string;
   x: number;
   y: number;
   hp: number;
   maxHp: number;
   alive: boolean;
-  kind: "wolf" | "vine";
+  kind: EnemyKind;
   intent: "idle" | "chase" | "windup" | "recover";
   attackReadyAt: number;
 }
@@ -139,13 +142,15 @@ export interface InventoryItem {
   description: string;
 }
 
-export interface StageOneGameplay {
-  stage: 1 | 2;
+export interface StageGameplay {
+  stage: CampaignStage;
+  biome: { name: string; subtitle: string; theme: "forest" | "archives" | "forge" | "peaks" | "citadel" };
   player: { x: number; y: number; hp: number; maxHp: number; essence: number; weaponId: string };
-  groves: Array<{ id: string; x: number; y: number; label: string; purified: boolean }>;
-  enemies: StageOneEnemy[];
-  elias: { x: number; y: number; hp: number; maxHp: number; recruited: boolean; weaponId: string; mode: "follow" | "focus" | "guard" | "hold" };
-  sylvara: { x: number; y: number; hp: number; maxHp: number; phase: 1 | 2 | 3; attackReadyAt: number; intent: "shielded" | "idle" | "roots" | "summon"; awakened: boolean; defeated: boolean };
+  objectives: Array<{ id: string; x: number; y: number; label: string; completed: boolean }>;
+  enemies: StageEnemy[];
+  companion: { id: string; name: string; role: string; x: number; y: number; hp: number; maxHp: number; recruited: boolean; weaponId: string; mode: "follow" | "focus" | "guard" | "hold" };
+  boss: { id: string; name: string; title: string; x: number; y: number; hp: number; maxHp: number; phase: 1 | 2 | 3; attackReadyAt: number; intent: "shielded" | "idle" | "strike" | "summon"; awakened: boolean; defeated: boolean };
+  seal: { id: string; name: string; icon: string };
   sealCollected: boolean;
   inventory: InventoryItem[];
   weaponPickups: Array<{ id: string; x: number; y: number; item: InventoryItem; collected: boolean }>;
@@ -153,6 +158,7 @@ export interface StageOneGameplay {
   pendingBlessing: boolean;
   portalActive: boolean;
   stageComplete: boolean;
+  campaignComplete: boolean;
   objective: string;
   storyLine: string;
 }
@@ -236,7 +242,7 @@ export interface WorldSnapshot {
   proposals: Proposal[];
   activity: ActivityEntry[];
   adventure: AdventureState;
-  gameplay?: StageOneGameplay;
+  gameplay?: StageGameplay;
 }
 
 export interface ContinuityReport {

@@ -24,11 +24,11 @@ describe("gameplay WebMCP tools", () => {
 
   it("commands Elias and attributes the mutation to the agent", async () => {
     const engine = new WorldEngine(createEclipseInheritance());
-    const elias = engine.snapshot().gameplay!.elias;
+    const elias = engine.snapshot().gameplay!.companion;
     engine.stageOneInteract({ x: elias.x, y: elias.y });
     const result = await executeCommandElias({ mode: "guard" }, context(engine));
     expect(result.status).toBe("ok");
-    expect(engine.snapshot().gameplay!.elias.mode).toBe("guard");
+    expect(engine.snapshot().gameplay!.companion.mode).toBe("guard");
     expect(engine.snapshot().activity[0]?.actor).toBe("agent");
   });
 
@@ -36,6 +36,6 @@ describe("gameplay WebMCP tools", () => {
     const engine = new WorldEngine(createEclipseInheritance());
     const result = await executeCommandElias({ mode: "berserk" }, context(engine));
     expect(result.status).toBe("error");
-    expect(engine.snapshot().gameplay!.elias.mode).toBe("follow");
+    expect(engine.snapshot().gameplay!.companion.mode).toBe("follow");
   });
 });

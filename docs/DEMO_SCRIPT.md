@@ -20,7 +20,7 @@ Paste this prompt into the browsing agent before the shot, then show it executin
 
 > Inspect the battlefield, explain my next objective, and set Elias to guard me.
 
-Show the calls to `inspect_battlefield`, `explain_next_objective`, and `command_elias`. Keep the game and activity panel visible. End the clip with Elias's HUD stance reading `guard` and the activity entry appearing.
+Show the calls to `inspect_battlefield`, `explain_next_objective`, and `command_companion`. Keep the game and activity panel visible. End the clip with Elias's HUD stance reading `guard` and the activity entry appearing.
 
 > The agent is not reading pixels or guessing. WebMCP gives it structured tools over the same canonical state used by combat. It sees current health, enemies, quest gates and Sylvara's phase, then issues a reversible command to Elias.
 

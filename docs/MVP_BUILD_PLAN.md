@@ -112,7 +112,7 @@ Recommended structure:
 
 ## MVP schedule
 
-### Phase 1: Stage 1 playable slice
+### Phase 1: Stage 1 playable slice (complete)
 
 Goal: deliver a complete first stage that feels like a real game.
 

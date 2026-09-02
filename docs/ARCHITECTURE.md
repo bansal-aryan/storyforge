@@ -2,7 +2,7 @@
 
 This project is a browser-based top-down action-RPG built around the exact visual specification in the game brief. The game language is simple, readable, and playful: a TheLast.io-inspired cartoon fantasy world with direct player control, companion AI, and stage progression that is easy to understand in a browser.
 
-The current implementation is a top-down browser action-RPG called Eclipse Inheritance with one complete playable Stage 1 vertical slice. Stages 2–5 are world-model and narrative design targets, not currently playable content.
+The current implementation is a top-down browser action-RPG called Eclipse Inheritance with a complete five-stage campaign. All stages share one deterministic engine and progression contract while supplying authored biome, objective, enemy, companion, weapon, boss, and Seal data.
 
 ## Product principles
 
@@ -171,7 +171,7 @@ The judge-facing path uses three purpose-built gameplay tools:
 
 - `inspect_battlefield` reads the live encounter without mutation
 - `explain_next_objective` derives a legal next action from quest gates
-- `command_elias` applies a reversible tactical stance and logs agent attribution
+- `command_companion` applies a reversible tactical stance and logs agent attribution
 
 Additional tools expose world summaries, memory, continuity checks, party and quest proposals, companion dialogue proposals, and confirmed world rules. Story-changing proposals are displayed in the game with Accept and Reject controls.
 
@@ -195,8 +195,8 @@ Core responsibilities:
 - Use a lightweight DOM/CSS or Canvas-based renderer for the top-down game world.
 - Keep art readable and cartoon-like using black outlines, soft gradients, and simple shapes.
 - Use deterministic state updates so the player sees visible, reliable consequences.
-- Keep the first playable slice focused on Stage 1 and the exact Elias visuals, Sylvara encounter, and Portal activation behavior.
-- Add the other stage systems only after the Stage 1 slice is stable and playable.
+- Keep combat and quest gates data-driven so all five phases obey the same canonical rules.
+- Give each phase a distinct visual palette, enemy silhouettes, companion identity, collectible weapon, boss, and narrative objective.
 
 ## Delivery strategy
 

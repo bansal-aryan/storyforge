@@ -2,7 +2,7 @@
 
 Eclipse Inheritance is a browser action-RPG about collaborating with an agent-controlled ranger during live combat. The human controls the Last Heir directly; a WebMCP agent can inspect canonical battlefield state, explain the next valid objective, and change Elias's tactical stance without inventing items, skipping quest gates, or taking control of the player.
 
-This repository contains a complete Stage 1 vertical slice set in Emberwood Glade. The larger story is designed around five Eclipse Seals, but only Stage 1 is claimed as playable here.
+This repository contains the complete five-phase Eclipse campaign. Each realm has its own objectives, enemy cast, recruitable companion, collectible weapon, multi-phase boss, Seal, visual theme, and gated transition into the next chapter.
 
 ## Why WebMCP
 
@@ -17,11 +17,11 @@ The agent reads the real game state, returns grounded guidance, calls a reversib
 ## Playable loop
 
 1. Explore a scrolling forest with WASD or arrow keys.
-2. Recruit Elias and collect optional weapons.
-3. Purify three blighted groves and choose blessings.
+2. Recruit each realm's companion and collect optional weapons.
+3. Complete three realm-specific objectives and choose blessings.
 4. Fight telegraphed enemies with quick attacks, heavy attacks, and dodges.
-5. Command Elias to follow, guard, focus, or hold.
-6. Defeat Sylvara, collect the Seal of Roots, and activate the Portal.
+5. Command the active companion to follow, guard, focus, or hold.
+6. Defeat Sylvara, Nihil, Ferrox, Astrax, and Voss; unite all five Eclipse Seals.
 
 ## WebMCP implementation
 
@@ -29,9 +29,9 @@ The app registers structured tools from `document.modelContext` or `navigator.mo
 
 The three judge-facing gameplay tools are:
 
-- `inspect_battlefield` — reads health, objectives, enemies, grove progress, Sylvara's phase, pickups, Seal state, and Portal state.
+- `inspect_battlefield` — reads health, objectives, enemies, boss phase, pickups, Seal state, and Portal state for the active realm.
 - `explain_next_objective` — recommends only actions allowed by the current canonical quest state.
-- `command_elias` — changes Elias between `follow`, `guard`, `focus`, and `hold`; the reversible action is attributed to the agent and shown in the activity panel.
+- `command_companion` — changes the active companion between `follow`, `guard`, `focus`, and `hold`; the reversible action is attributed to the agent and shown in the activity panel.
 
 Additional world-model tools demonstrate memory search, continuity validation, human-approved story proposals, and durable world rules. Mutating story operations create pending proposals. The player can accept or reject them in the game. Destructive rule changes use WebMCP's user-interaction callback when available.
 
@@ -66,15 +66,15 @@ pnpm test
 pnpm build
 ```
 
-The test suite covers the Stage 1 gates, combat telegraphs, Sylvara phases, weapons, blessings, Elias combat, battlefield inspection, canonical objective guidance, and agent-attributed tactical commands.
+The test suite covers every phase and Seal gate through the final ending, plus combat telegraphs, boss phases, weapons, blessings, companion combat, battlefield inspection, canonical objective guidance, and agent-attributed tactical commands.
 
 ## Judge testing instructions
 
 1. Open the public deployment in a WebMCP-capable browser.
 2. Click **Begin the inheritance**, recruit Elias near the starting area, and open **Agent** in the top navigation.
 3. Ask the browsing agent: “Inspect the battlefield, explain the next objective, and set Elias to guard.”
-4. Confirm that the browser calls `inspect_battlefield`, `explain_next_objective`, and `command_elias`.
-5. Confirm that Elias's HUD stance becomes `guard` and `command_elias` appears under **Agent activity**.
+4. Confirm that the browser calls `inspect_battlefield`, `explain_next_objective`, and `command_companion`.
+5. Confirm that Elias's HUD stance becomes `guard` and `command_companion` appears under **Agent activity**.
 6. Continue through Sylvara, the Seal, and the Portal to verify the deterministic stage gates.
 
 No account or credentials are required. Progress is stored locally in IndexedDB.

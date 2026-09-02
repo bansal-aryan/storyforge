@@ -19,7 +19,9 @@ import type {
   WorldRule,
   WorldSnapshot,
   WorldSummary,
+  CampaignStage,
 } from "../types/world";
+import { createStageGameplay, STAGES } from "./campaign";
 import { checkContinuity } from "./continuity";
 import { displayName, makeId, uniqueName } from "./ids";
 import { applyPatch } from "./proposals";
@@ -243,29 +245,40 @@ export class WorldEngine {
 
       if (game.portalActive && near({ x: 2070, y: 180 }, 38)) {
         type = "portal";
-        summary = "The heir enters the Portal. The Drowned Archives awaken beyond it.";
-        game.stageComplete = true;
-        game.stage = 2;
-        game.objective = "Stage 2 — enter the Drowned Archives and seek the Seal of Memory.";
-        game.storyLine = "Cold black water reflects an impossible library as the Portal closes behind you.";
-        const current = draft.adventure.quest.stages[0];
-        const following = draft.adventure.quest.stages[1];
+        const nextStage = (game.stage + 1) as CampaignStage;
+        const nextDefinition = STAGES[nextStage];
+        summary = `The heir enters the Portal. ${nextDefinition.biome.name} awakens beyond it.`;
+        const current = draft.adventure.quest.stages[game.stage - 1];
+        const following = draft.adventure.quest.stages[nextStage - 1];
         if (current) current.state = "complete";
         if (following) following.state = "active";
-        draft.adventure.quest.stageIndex = 1;
-        if (draft.adventure.map[1]) draft.adventure.map[1]!.unlocked = true;
-        draft.currentScene = { ...draft.currentScene, id: makeId("scn"), title: "The Drowned Threshold", locationId: following?.locationId ?? null, tick: draft.currentScene.tick + 1 };
+        draft.adventure.quest.stageIndex = nextStage - 1;
+        if (draft.adventure.map[nextStage - 1]) { draft.adventure.map[nextStage - 1]!.unlocked = true; draft.adventure.map[nextStage - 1]!.visited = true; }
+        draft.currentScene = { ...draft.currentScene, id: makeId("scn"), title: `Arrival in ${nextDefinition.biome.name}`, locationId: following?.locationId ?? null, tick: draft.currentScene.tick + 1 };
+        const inventory = [...game.inventory];
+        const equippedWeapon = game.player.weaponId;
+        draft.gameplay = createStageGameplay(nextStage, inventory, game.player.maxHp);
+        if (inventory.some((item) => item.id === equippedWeapon)) draft.gameplay.player.weaponId = equippedWeapon;
         return;
       }
 
-      if (game.sylvara.defeated && !game.sealCollected && near(game.sylvara, 48)) {
+      if (game.boss.defeated && !game.sealCollected && near(game.boss, 48)) {
         type = "seal";
-        summary = "The Seal of Roots is claimed. The Emberwood Portal awakens.";
+        summary = `${game.seal.name} is claimed.`;
         game.sealCollected = true;
-        if (!game.inventory.some((item) => item.id === "itm_roots")) game.inventory.push({ id: "itm_roots", name: "Seal of Roots", kind: "seal", icon: "✦", description: "The first restored Eclipse Seal." });
-        game.portalActive = true;
-        game.objective = "Enter the awakened Portal.";
-        game.storyLine = "The Seal settles into your palm. Green-gold light races through the roots and ignites the Portal.";
+        if (!game.inventory.some((item) => item.id === game.seal.id)) game.inventory.push({ id: game.seal.id, name: game.seal.name, kind: "seal", icon: game.seal.icon, description: `A restored Eclipse Seal claimed in ${game.biome.name}.` });
+        if (game.stage === 5) {
+          game.campaignComplete = true;
+          game.stageComplete = true;
+          game.objective = "The eclipse is broken. Dawn returns.";
+          game.storyLine = "Five Seals answer as one. Voss's stolen godhood shatters, and the first sunrise in a generation touches the Citadel.";
+          const finalStage = draft.adventure.quest.stages[4];
+          if (finalStage) finalStage.state = "complete";
+        } else {
+          game.portalActive = true;
+          game.objective = "Enter the awakened Portal.";
+          game.storyLine = `${game.seal.name} settles into your palm and ignites the way to the next realm.`;
+        }
         return;
       }
 
@@ -280,27 +293,27 @@ export class WorldEngine {
         return;
       }
 
-      const grove = game.groves.find((candidate) => !candidate.purified && near(candidate, 34));
-      if (grove) {
-        type = "grove";
-        grove.purified = true;
-        const count = game.groves.filter((candidate) => candidate.purified).length;
-        summary = `${grove.label} is purified.`;
-        game.storyLine = `${grove.label} is cleansed. The blight recoils from the heir's touch.`;
+      const objective = game.objectives.find((candidate) => !candidate.completed && near(candidate, 34));
+      if (objective) {
+        type = "objective";
+        objective.completed = true;
+        const count = game.objectives.filter((candidate) => candidate.completed).length;
+        summary = `${objective.label} is restored.`;
+        game.storyLine = `${objective.label} answers the heir. One more chain on ${game.boss.name} begins to break.`;
         game.pendingBlessing = true;
-        game.objective = count === game.groves.length ? "Clear the blighted guardians and confront Sylvara." : `Purify the remaining groves (${game.groves.length - count} left).`;
-        game.sylvara.awakened = count === game.groves.length && game.enemies.every((enemy) => !enemy.alive);
-        if (game.sylvara.awakened) { game.sylvara.intent = "idle"; game.sylvara.attackReadyAt = Date.now() + 900; }
+        game.objective = count === game.objectives.length ? `Clear the remaining guardians and confront ${game.boss.name}.` : `Complete the remaining stage objectives (${game.objectives.length - count} left).`;
+        game.boss.awakened = count === game.objectives.length && game.enemies.every((enemy) => !enemy.alive);
+        if (game.boss.awakened) { game.boss.intent = "idle"; game.boss.attackReadyAt = Date.now() + 900; }
         return;
       }
 
-      if (!game.elias.recruited && near(game.elias, 38)) {
-        type = "elias";
-        summary = "Elias joins the heir's hunt.";
-        game.elias.recruited = true;
-        game.storyLine = "Elias lowers his bow. “Voss burned my village to erase your bloodline. We hunt together.”";
-        if (!draft.adventure.party.some((member) => member.entityId === "chr_elias")) {
-          draft.adventure.party.push({ entityId: "chr_elias", role: "companion", agentControlled: true, archetype: "Ranger", disposition: "Watchful, loyal", memory: ["Voss's purge destroyed Elias's village."] });
+      if (!game.companion.recruited && near(game.companion, 38)) {
+        type = "companion";
+        summary = `${game.companion.name} joins the heir's quest.`;
+        game.companion.recruited = true;
+        game.storyLine = `${game.companion.name} recognizes the restored Seal and pledges their strength to the final hunt.`;
+        if (!draft.adventure.party.some((member) => member.entityId === game.companion.id)) {
+          draft.adventure.party.push({ entityId: game.companion.id, role: "companion", agentControlled: true, archetype: game.companion.role, disposition: "Resolute, loyal", memory: [`Joined the heir in ${game.biome.name}.`] });
         }
       }
     });
@@ -330,35 +343,35 @@ export class WorldEngine {
         game.player.essence = Math.max(0, game.player.essence - (options.heavy ? 12 : 4));
         summary = enemy.alive ? "A blighted guardian staggers." : "A blighted guardian falls.";
         game.storyLine = summary;
-        const ready = game.groves.every((grove) => grove.purified) && game.enemies.every((candidate) => !candidate.alive);
-        game.sylvara.awakened = game.sylvara.awakened || ready;
+        const ready = game.objectives.every((grove) => grove.completed) && game.enemies.every((candidate) => !candidate.alive);
+        game.boss.awakened = game.boss.awakened || ready;
         if (ready) {
-          game.sylvara.intent = "idle";
-          game.sylvara.attackReadyAt = Date.now() + 900;
-          game.objective = "Defeat Sylvara the Blightweaver.";
-          game.storyLine = "The last guardian falls. Sylvara descends from the Heart of the First Tree.";
+          game.boss.intent = "idle";
+          game.boss.attackReadyAt = Date.now() + 900;
+          game.objective = `Defeat ${game.boss.name} ${game.boss.title}.`;
+          game.storyLine = `The last guardian falls. ${game.boss.name} enters the battlefield.`;
         }
         return;
       }
-      if (!game.sylvara.defeated && near(game.sylvara, 60)) {
-        if (!game.sylvara.awakened) {
+      if (!game.boss.defeated && near(game.boss, 60)) {
+        if (!game.boss.awakened) {
           type = "blocked";
-          summary = "Blighted roots shield Sylvara. Purify the groves and defeat their guardians first.";
+          summary = `${game.boss.name} remains shielded. Complete the three objectives and defeat their guardians first.`;
           game.storyLine = summary;
           return;
         }
         type = "boss";
         const bossDamage = (game.player.weaponId === "wpn_ember_axe" ? 2 : 1) + (options.heavy ? 1 : 0) + (game.blessings.includes("fury") ? 1 : 0);
-        game.sylvara.hp = Math.max(0, game.sylvara.hp - bossDamage);
-        game.sylvara.phase = game.sylvara.hp <= 4 ? 3 : game.sylvara.hp <= 8 ? 2 : 1;
+        game.boss.hp = Math.max(0, game.boss.hp - bossDamage);
+        game.boss.phase = game.boss.hp <= game.boss.maxHp / 3 ? 3 : game.boss.hp <= (game.boss.maxHp * 2) / 3 ? 2 : 1;
         game.player.essence = Math.max(0, game.player.essence - (options.heavy ? 14 : 6));
-        if (game.sylvara.hp === 0) {
-          game.sylvara.defeated = true;
-          summary = "Sylvara falls, leaving the Seal of Roots among the dying vines.";
-          game.objective = "Collect the Seal of Roots from Sylvara (E).";
+        if (game.boss.hp === 0) {
+          game.boss.defeated = true;
+          summary = `${game.boss.name} falls, leaving ${game.seal.name} exposed.`;
+          game.objective = `Collect ${game.seal.name} from ${game.boss.name} (E).`;
         } else {
-          summary = `Sylvara reels. ${game.sylvara.hp}/${game.sylvara.maxHp} strength remains.`;
-          game.objective = "Defeat Sylvara the Blightweaver.";
+          summary = `${game.boss.name} reels. ${game.boss.hp}/${game.boss.maxHp} strength remains.`;
+          game.objective = `Defeat ${game.boss.name} ${game.boss.title}.`;
         }
         game.storyLine = summary;
       }
@@ -393,23 +406,23 @@ export class WorldEngine {
       if (!state.blessings.includes(blessing)) state.blessings.push(blessing);
       state.pendingBlessing = false;
       if (blessing === "vigor") { state.player.maxHp += 20; state.player.hp = Math.min(state.player.maxHp, state.player.hp + 20); }
-      if (blessing === "bond") { state.elias.maxHp += 20; state.elias.hp = Math.min(state.elias.maxHp, state.elias.hp + 20); }
+      if (blessing === "bond") { state.companion.maxHp += 20; state.companion.hp = Math.min(state.companion.maxHp, state.companion.hp + 20); }
       state.storyLine = { vigor: "The First Tree strengthens the heir's living blood.", fury: "Root-fire gathers along every weapon edge.", wind: "The forest wind lightens the heir's step.", bond: "The blessing binds heir and ranger more closely." }[blessing];
     });
     this.commit(next, { id: makeId("act"), at: Date.now(), actor: "human", toolName: "choose_blessing", summary: `The heir accepts the blessing of ${blessing}.` });
   }
 
-  setEliasMode(
+  setCompanionMode(
     mode: "follow" | "focus" | "guard" | "hold",
     opts: { actor: Actor } = { actor: "human" },
   ): { mode: "follow" | "focus" | "guard" | "hold"; summary: string } {
     const world = this.require();
     const game = this.requireStageOne();
-    if (!game.elias.recruited) throw new Error("Elias must be recruited before he can receive tactical commands.");
-    if (game.elias.hp <= 0) throw new Error("Elias is wounded and cannot change tactics yet.");
-    const summary = `Elias changes stance to ${mode}.`;
-    const next = produce(world, (draft) => { draft.gameplay!.elias.mode = mode; });
-    this.commit(next, { id: makeId("act"), at: Date.now(), actor: opts.actor, toolName: "command_elias", summary, data: { mode } });
+    if (!game.companion.recruited) throw new Error(`${game.companion.name} must be recruited before receiving tactical commands.`);
+    if (game.companion.hp <= 0) throw new Error(`${game.companion.name} is wounded and cannot change tactics yet.`);
+    const summary = `${game.companion.name} changes stance to ${mode}.`;
+    const next = produce(world, (draft) => { draft.gameplay!.companion.mode = mode; });
+    this.commit(next, { id: makeId("act"), at: Date.now(), actor: opts.actor, toolName: "command_companion", summary, data: { mode } });
     return { mode, summary };
   }
 
@@ -423,10 +436,10 @@ export class WorldEngine {
       stage: game.stage,
       objective: game.objective,
       player: { hp: game.player.hp, maxHp: game.player.maxHp, essence: game.player.essence, weapon: equipped?.name ?? game.player.weaponId },
-      elias: { recruited: game.elias.recruited, hp: game.elias.hp, maxHp: game.elias.maxHp, mode: game.elias.mode },
-      groves: { purified: game.groves.filter((grove) => grove.purified).length, total: game.groves.length },
+      companion: { name: game.companion.name, role: game.companion.role, recruited: game.companion.recruited, hp: game.companion.hp, maxHp: game.companion.maxHp, mode: game.companion.mode },
+      objectives: { completed: game.objectives.filter((objective) => objective.completed).length, total: game.objectives.length },
       enemies: activeEnemies,
-      sylvara: { awakened: game.sylvara.awakened, defeated: game.sylvara.defeated, hp: game.sylvara.hp, maxHp: game.sylvara.maxHp, phase: game.sylvara.phase, intent: game.sylvara.intent },
+      boss: { name: game.boss.name, title: game.boss.title, awakened: game.boss.awakened, defeated: game.boss.defeated, hp: game.boss.hp, maxHp: game.boss.maxHp, phase: game.boss.phase, intent: game.boss.intent },
       sealCollected: game.sealCollected,
       portalActive: game.portalActive,
       collectibleWeapons: game.weaponPickups.filter((pickup) => !pickup.collected).map((pickup) => pickup.item.name),
@@ -435,16 +448,16 @@ export class WorldEngine {
 
   getNextObjectiveGuidance(): { objective: string; recommendedAction: string; reason: string } {
     const game = this.requireStageOne();
-    if (game.stageComplete) return { objective: game.objective, recommendedAction: "Continue into the Drowned Archives.", reason: "The Stage 1 vertical slice is complete." };
-    if (game.portalActive) return { objective: game.objective, recommendedAction: "Enter the glowing Portal in the northeast.", reason: "Sylvara is defeated and the Seal of Roots is secured." };
-    if (game.sylvara.defeated && !game.sealCollected) return { objective: game.objective, recommendedAction: "Collect the Seal where Sylvara fell.", reason: "The Portal cannot activate until the Seal is claimed." };
-    if (game.sylvara.awakened) return { objective: game.objective, recommendedAction: game.elias.recruited ? "Set Elias to focus, dodge the root telegraph, and strike Sylvara." : "Recruit Elias, then confront Sylvara.", reason: `Sylvara is exposed in phase ${game.sylvara.phase}.` };
-    const unpurified = game.groves.find((grove) => !grove.purified);
-    if (unpurified) return { objective: game.objective, recommendedAction: `Travel to ${unpurified.label} and purify its blight totem.`, reason: `${game.groves.filter((grove) => grove.purified).length} of ${game.groves.length} groves are purified.` };
-    return { objective: game.objective, recommendedAction: "Defeat the remaining blighted guardians.", reason: `${game.enemies.filter((enemy) => enemy.alive).length} guardians still anchor Sylvara's shield.` };
+    if (game.campaignComplete) return { objective: game.objective, recommendedAction: "Witness the restored dawn.", reason: "All five Eclipse Seals are united and Voss is defeated." };
+    if (game.portalActive) return { objective: game.objective, recommendedAction: "Enter the glowing Portal in the northeast.", reason: `${game.boss.name} is defeated and ${game.seal.name} is secured.` };
+    if (game.boss.defeated && !game.sealCollected) return { objective: game.objective, recommendedAction: `Collect ${game.seal.name} where ${game.boss.name} fell.`, reason: game.stage === 5 ? "The five Seals can now end the eclipse." : "The Portal cannot activate until the Seal is claimed." };
+    if (game.boss.awakened) return { objective: game.objective, recommendedAction: game.companion.recruited ? `Set ${game.companion.name} to focus, dodge the telegraph, and strike ${game.boss.name}.` : `Recruit ${game.companion.name}, then confront ${game.boss.name}.`, reason: `${game.boss.name} is exposed in phase ${game.boss.phase}.` };
+    const incomplete = game.objectives.find((objective) => !objective.completed);
+    if (incomplete) return { objective: game.objective, recommendedAction: `Travel to ${incomplete.label} and complete its ritual.`, reason: `${game.objectives.filter((objective) => objective.completed).length} of ${game.objectives.length} stage objectives are complete.` };
+    return { objective: game.objective, recommendedAction: "Defeat the remaining guardians.", reason: `${game.enemies.filter((enemy) => enemy.alive).length} guardians still anchor ${game.boss.name}'s shield.` };
   }
 
-  combatTick(input: { player: { x: number; y: number }; elias: { x: number; y: number }; dodging: boolean; now: number }): void {
+  combatTick(input: { player: { x: number; y: number }; companion: { x: number; y: number }; dodging: boolean; now: number }): void {
     const world = this.require();
     const game = this.requireStageOne();
     if (game.stageComplete) return;
@@ -455,52 +468,53 @@ export class WorldEngine {
         if (target === "player") {
           if (input.dodging) return;
           state.player.hp = Math.max(0, state.player.hp - amount);
-        } else state.elias.hp = Math.max(0, state.elias.hp - amount);
+        } else state.companion.hp = Math.max(0, state.companion.hp - amount);
         changed = true;
       };
       for (const enemy of state.enemies) {
         if (!enemy.alive) continue;
         const playerDistance = Math.hypot(enemy.x - input.player.x, enemy.y - input.player.y);
-        const eliasAvailable = state.elias.recruited && state.elias.hp > 0 && state.elias.mode === "guard";
-        const eliasDistance = Math.hypot(enemy.x - input.elias.x, enemy.y - input.elias.y);
+        const eliasAvailable = state.companion.recruited && state.companion.hp > 0 && state.companion.mode === "guard";
+        const eliasDistance = Math.hypot(enemy.x - input.companion.x, enemy.y - input.companion.y);
         const target: "player" | "elias" = eliasAvailable && eliasDistance < playerDistance + 70 ? "elias" : "player";
-        const targetPoint = target === "player" ? input.player : input.elias;
+        const targetPoint = target === "player" ? input.player : input.companion;
         const distance = target === "player" ? playerDistance : eliasDistance;
+        const melee = enemy.kind === "wolf" || enemy.kind === "forge" || enemy.kind === "sentinel" || enemy.kind === "acolyte" || enemy.kind === "knight";
         if (enemy.intent === "windup" && input.now >= enemy.attackReadyAt) {
-          if (distance < (enemy.kind === "wolf" ? 62 : 330)) damageTarget(target, enemy.kind === "wolf" ? 9 : 11);
-          enemy.intent = "recover"; enemy.attackReadyAt = input.now + (enemy.kind === "wolf" ? 700 : 1250); changed = true;
+          if (distance < (melee ? 62 : 330)) damageTarget(target, melee ? 9 + state.stage : 10 + state.stage);
+          enemy.intent = "recover"; enemy.attackReadyAt = input.now + (melee ? 700 : 1250); changed = true;
         } else if (enemy.intent === "recover" && input.now >= enemy.attackReadyAt) {
           enemy.intent = "idle"; changed = true;
         } else if (enemy.intent !== "windup" && enemy.intent !== "recover" && input.now >= enemy.attackReadyAt) {
-          if (distance < (enemy.kind === "wolf" ? 54 : 310)) {
-            enemy.intent = "windup"; enemy.attackReadyAt = input.now + (enemy.kind === "wolf" ? 430 : 780); changed = true;
-          } else if (enemy.kind === "wolf" && distance < 430) {
+          if (distance < (melee ? 54 : 310)) {
+            enemy.intent = "windup"; enemy.attackReadyAt = input.now + (melee ? 430 : 780); changed = true;
+          } else if (melee && distance < 430) {
             const step = 8; enemy.x += ((targetPoint.x - enemy.x) / distance) * step; enemy.y += ((targetPoint.y - enemy.y) / distance) * step; enemy.intent = "chase"; changed = true;
           }
         }
       }
-      const boss = state.sylvara;
+      const boss = state.boss;
       if (boss.awakened && !boss.defeated) {
         if (boss.intent === "shielded") { boss.intent = "idle"; boss.attackReadyAt = input.now + 700; changed = true; }
         const playerDistance = Math.hypot(boss.x - input.player.x, boss.y - input.player.y);
-        const eliasDistance = Math.hypot(boss.x - input.elias.x, boss.y - input.elias.y);
-        const guardIntercepts = state.elias.recruited && state.elias.hp > 0 && state.elias.mode === "guard" && eliasDistance < playerDistance + 90;
+        const eliasDistance = Math.hypot(boss.x - input.companion.x, boss.y - input.companion.y);
+        const guardIntercepts = state.companion.recruited && state.companion.hp > 0 && state.companion.mode === "guard" && eliasDistance < playerDistance + 90;
         const bossTarget: "player" | "elias" = guardIntercepts ? "elias" : "player";
-        const bossTargetPoint = bossTarget === "elias" ? input.elias : input.player;
+        const bossTargetPoint = bossTarget === "elias" ? input.companion : input.player;
         const targetDistance = bossTarget === "elias" ? eliasDistance : playerDistance;
-        if ((boss.intent === "roots" || boss.intent === "summon") && input.now >= boss.attackReadyAt) {
-          if (targetDistance < (boss.intent === "roots" ? 480 : 250)) damageTarget(bossTarget, boss.phase === 3 ? 18 : 13);
+        if ((boss.intent === "strike" || boss.intent === "summon") && input.now >= boss.attackReadyAt) {
+          if (targetDistance < (boss.intent === "strike" ? 480 : 250)) damageTarget(bossTarget, boss.phase === 3 ? 18 + state.stage : 12 + state.stage);
           if (boss.intent === "summon") {
             const fallen = state.enemies.find((enemy) => !enemy.alive);
             if (fallen) {
               fallen.alive = true; fallen.hp = Math.min(3, fallen.maxHp); fallen.intent = "idle"; fallen.attackReadyAt = input.now + 800;
               fallen.x = boss.x - 95; fallen.y = boss.y + (boss.phase === 3 ? 75 : -75);
-              state.storyLine = "Sylvara tears a fallen guardian back into the fight.";
+              state.storyLine = `${boss.name} tears a fallen guardian back into the fight.`;
             }
           }
           boss.intent = "idle"; boss.attackReadyAt = input.now + Math.max(700, 1550 - boss.phase * 220); changed = true;
         } else if (boss.intent === "idle" && input.now >= boss.attackReadyAt) {
-          boss.intent = boss.phase === 1 ? "roots" : Math.floor(input.now / 1000) % 2 === 0 ? "summon" : "roots";
+          boss.intent = boss.phase === 1 ? "strike" : Math.floor(input.now / 1000) % 2 === 0 ? "summon" : "strike";
           boss.attackReadyAt = input.now + (boss.phase === 1 ? 950 : boss.phase === 2 ? 760 : 620); changed = true;
         } else if (boss.intent === "idle" && targetDistance > 285) {
           const distance = targetDistance || 1;
@@ -510,53 +524,53 @@ export class WorldEngine {
           changed = true;
         }
       }
-      if (state.player.hp === 0) { state.player.hp = state.player.maxHp; state.player.x = 240; state.player.y = 720; state.storyLine = "The heir awakens at the ruined village shrine."; }
+      if (state.player.hp === 0) { state.player.hp = state.player.maxHp; state.player.x = 240; state.player.y = 720; state.storyLine = `The heir awakens at ${state.biome.name}'s threshold. The inheritance endures.`; }
     });
     if (changed) this.sync(next, "Combat state advances.");
   }
 
-  eliasCombatTick(position: { x: number; y: number }): { type: string; summary: string } {
+  companionCombatTick(position: { x: number; y: number }): { type: string; summary: string } {
     const world = this.require();
     const game = this.requireStageOne();
-    if (!game.elias.recruited || game.elias.hp <= 0 || game.stageComplete) return { type: "idle", summary: "Elias holds position." };
+    if (!game.companion.recruited || game.companion.hp <= 0 || game.stageComplete) return { type: "idle", summary: `${game.companion.name} holds position.` };
     const candidates = game.enemies.filter((enemy) => enemy.alive).map((enemy) => ({ enemy, distance: Math.hypot(position.x - enemy.x, position.y - enemy.y) })).sort((a, b) => a.distance - b.distance);
     const target = candidates[0];
-    const range = game.elias.mode === "focus" ? 330 : game.elias.mode === "hold" ? 270 : 210;
-    const bossDistance = Math.hypot(position.x - game.sylvara.x, position.y - game.sylvara.y);
-    const canShootBoss = game.sylvara.awakened && !game.sylvara.defeated && bossDistance <= (game.elias.mode === "focus" ? 430 : range);
-    if (canShootBoss && (game.elias.mode === "focus" || !target || target.distance > range)) {
+    const range = game.companion.mode === "focus" ? 330 : game.companion.mode === "hold" ? 270 : 210;
+    const bossDistance = Math.hypot(position.x - game.boss.x, position.y - game.boss.y);
+    const canShootBoss = game.boss.awakened && !game.boss.defeated && bossDistance <= (game.companion.mode === "focus" ? 430 : range);
+    if (canShootBoss && (game.companion.mode === "focus" || !target || target.distance > range)) {
       const damage = game.blessings.includes("bond") ? 2 : 1;
       const next = produce(world, (draft) => {
-        const boss = draft.gameplay!.sylvara;
+        const boss = draft.gameplay!.boss;
         boss.hp = Math.max(0, boss.hp - damage);
-        boss.phase = boss.hp <= 4 ? 3 : boss.hp <= 8 ? 2 : 1;
-        if (boss.hp === 0) { boss.defeated = true; draft.gameplay!.objective = "Collect the Seal of Roots from Sylvara (E)."; }
+        boss.phase = boss.hp <= boss.maxHp / 3 ? 3 : boss.hp <= (boss.maxHp * 2) / 3 ? 2 : 1;
+        if (boss.hp === 0) { boss.defeated = true; draft.gameplay!.objective = `Collect ${draft.gameplay!.seal.name} from ${boss.name} (E).`; }
       });
-      const summary = game.elias.mode === "focus" ? "Elias marks Sylvara and drives an arrow through her heart-vines." : "Elias fires on Sylvara while the heir holds her attention.";
-      this.commit(next, { id: makeId("act"), at: Date.now(), actor: "system", toolName: "elias_attack", summary });
+      const summary = game.companion.mode === "focus" ? `${game.companion.name} focuses a decisive strike on ${game.boss.name}.` : `${game.companion.name} attacks ${game.boss.name} while the heir holds their attention.`;
+      this.commit(next, { id: makeId("act"), at: Date.now(), actor: "system", toolName: "companion_attack", summary });
       return { type: "boss_shot", summary };
     }
-    if (!target || target.distance > range) return { type: "idle", summary: "No enemy is within Elias's bow range." };
+    if (!target || target.distance > range) return { type: "idle", summary: `No enemy is within ${game.companion.name}'s attack range.` };
     let type = "shot";
-    let summary = `Elias strikes ${target.enemy.id} with his ranger bow.`;
+    let summary = `${game.companion.name} strikes ${target.enemy.id}.`;
     const next = produce(world, (draft) => {
       const draftGame = draft.gameplay!;
       const enemy = draftGame.enemies.find((candidate) => candidate.id === target.enemy.id)!;
       enemy.hp = Math.max(0, enemy.hp - (draftGame.blessings.includes("bond") ? 2 : 1));
       enemy.alive = enemy.hp > 0;
-      if (!enemy.alive) { type = "kill"; summary = "Elias drops a blighted guardian with a clean arrow."; }
+      if (!enemy.alive) { type = "kill"; summary = `${draftGame.companion.name} drops a guardian with a clean strike.`; }
       if (target.distance < 48) {
-        draftGame.elias.hp = Math.max(0, draftGame.elias.hp - 7);
-        if (draftGame.elias.hp === 0) { type = "down"; summary = "Elias is wounded and can no longer fight."; }
+        draftGame.companion.hp = Math.max(0, draftGame.companion.hp - 7);
+        if (draftGame.companion.hp === 0) { type = "down"; summary = `${draftGame.companion.name} is wounded and can no longer fight.`; }
       }
-      const ready = draftGame.groves.every((grove) => grove.purified) && draftGame.enemies.every((candidate) => !candidate.alive);
-      draftGame.sylvara.awakened = draftGame.sylvara.awakened || ready;
+      const ready = draftGame.objectives.every((grove) => grove.completed) && draftGame.enemies.every((candidate) => !candidate.alive);
+      draftGame.boss.awakened = draftGame.boss.awakened || ready;
       if (ready) {
-        draftGame.objective = "Defeat Sylvara the Blightweaver.";
-        if (draftGame.sylvara.intent === "shielded") { draftGame.sylvara.intent = "idle"; draftGame.sylvara.attackReadyAt = Date.now() + 900; }
+        draftGame.objective = `Defeat ${draftGame.boss.name} ${draftGame.boss.title}.`;
+        if (draftGame.boss.intent === "shielded") { draftGame.boss.intent = "idle"; draftGame.boss.attackReadyAt = Date.now() + 900; }
       }
     });
-    this.commit(next, { id: makeId("act"), at: Date.now(), actor: "system", toolName: "elias_attack", summary });
+    this.commit(next, { id: makeId("act"), at: Date.now(), actor: "system", toolName: "companion_attack", summary });
     return { type, summary };
   }
 
@@ -570,7 +584,7 @@ export class WorldEngine {
         player.hp = player.maxHp;
         player.x = 240;
         player.y = 720;
-        draft.gameplay!.storyLine = "The heir falls back to the village ruins. The bloodline endures.";
+        draft.gameplay!.storyLine = `The heir falls back to ${draft.gameplay!.biome.name}'s threshold. The bloodline endures.`;
       } else {
         draft.gameplay!.storyLine = "The blighted swarm tears at your armor. Keep moving.";
       }
@@ -578,16 +592,16 @@ export class WorldEngine {
     this.commit(next, { id: makeId("act"), at: Date.now(), actor: "system", summary: "The heir takes damage." });
   }
 
-  getEliasResponse(text: string): string {
+  getCompanionResponse(text: string): string {
     const game = this.requireStageOne();
-    if (!game.elias.recruited) return "Find me among the ruined groves first, heir. Then we can hunt as one.";
+    if (!game.companion.recruited) return `Find ${game.companion.name} in ${game.biome.name} before issuing companion commands.`;
     const lowered = text.toLowerCase();
-    if (game.sylvara.defeated && !game.sealCollected) return "The Seal lies where Sylvara fell. Claim it before the blight regathers.";
+    if (game.boss.defeated && !game.sealCollected) return `${game.seal.name} lies where ${game.boss.name} fell. Claim it before their power regathers.`;
     if (game.portalActive) return "The Portal is stable. Cross when you are ready; I will follow.";
-    if (lowered.includes("scout") || lowered.includes("ahead")) return game.groves.some((grove) => !grove.purified) ? "The corrupted totems anchor the blight. I marked each grove on your path." : "The groves are clean. Finish the guardians and Sylvara will lose her shield.";
-    if (lowered.includes("attack") || lowered.includes("strike")) return "I will keep the roots off your flank. Your blade must break Sylvara's heart-vines.";
+    if (lowered.includes("scout") || lowered.includes("ahead")) return game.objectives.some((objective) => !objective.completed) ? `The remaining objectives are marked across ${game.biome.name}.` : `The objectives are complete. Finish the guardians and ${game.boss.name} will lose their shield.`;
+    if (lowered.includes("attack") || lowered.includes("strike")) return `I will keep the enemy off your flank. Your weapon must break ${game.boss.name}'s final defense.`;
     if (lowered.includes("protect") || lowered.includes("guard")) return "Stay mobile. I have your back, but the inheritance answers only to you.";
-    return `We have purified ${game.groves.filter((grove) => grove.purified).length} of ${game.groves.length} groves. The forest remembers every step.`;
+    return `We have completed ${game.objectives.filter((objective) => objective.completed).length} of ${game.objectives.length} objectives in ${game.biome.name}.`;
   }
 
   moveParty(input: { locationId: string }, opts: { actor: Actor }): { summary: string; proposal?: Proposal } {
