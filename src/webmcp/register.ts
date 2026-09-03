@@ -13,11 +13,25 @@ export async function registerStoryforgeTools(): Promise<{ controller: AbortCont
     await context.registerTool({
       ...tool.def,
       execute: async (input: Record<string, unknown>, extra?: ToolExecuteExtra) => {
-        if (extra?.signal?.aborted) return serializeToolResult({}, "Cancelled.", "cancelled");
+        if (extra?.signal?.aborted) {
+          engine.recordToolActivity(tool.def.name, "Tool call cancelled before execution.");
+          return serializeToolResult({}, "Cancelled.", "cancelled");
+        }
         try {
-          return await tool.run(input, { engine, extra, actor: "agent" });
+          const activityBefore = engine.snapshot().activity[0]?.id;
+          const result = await tool.run(input, { engine, extra, actor: "agent" });
+          const latestActivity = engine.snapshot().activity[0];
+          const toolAlreadyLogged = latestActivity?.id !== activityBefore
+            && latestActivity?.actor === "agent"
+            && latestActivity?.toolName === tool.def.name;
+          if (!toolAlreadyLogged) {
+            engine.recordToolActivity(tool.def.name, result.summary ?? `${tool.def.name} completed.`);
+          }
+          return result;
         } catch (error) {
-          return serializeError(error instanceof Error ? error.message : "Tool execution failed.");
+          const message = error instanceof Error ? error.message : "Tool execution failed.";
+          engine.recordToolActivity(tool.def.name, `Failed: ${message}`);
+          return serializeError(message);
         }
       },
     }, { signal: controller.signal });

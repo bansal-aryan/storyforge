@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ActivityEntry } from "../types/world";
 import { WorldEngine } from "./WorldEngine";
 import { createAshenPort, createEclipseInheritance } from "./seed";
 
@@ -378,6 +379,19 @@ describe("WorldEngine", () => {
     engine.setCompanionMode("guard", { actor: "agent" });
     expect(engine.snapshot().gameplay!.companion.mode).toBe("guard");
     expect(engine.snapshot().activity[0]).toMatchObject({ actor: "agent", toolName: "command_companion" });
+  });
+
+  it("publishes read-only WebMCP tool activity to subscribers", () => {
+    const engine = new WorldEngine(createEclipseInheritance());
+    const changes: ActivityEntry[] = [];
+    engine.subscribe((_snapshot, change) => changes.push(change));
+    engine.recordToolActivity("inspect_battlefield", "Inspected the live battlefield.");
+    expect(engine.snapshot().activity[0]).toMatchObject({
+      actor: "agent",
+      toolName: "inspect_battlefield",
+      summary: "Inspected the live battlefield.",
+    });
+    expect(changes.at(-1)?.toolName).toBe("inspect_battlefield");
   });
 
   it("explains only the next objective allowed by canonical state", () => {

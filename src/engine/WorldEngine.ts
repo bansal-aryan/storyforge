@@ -92,6 +92,18 @@ export class WorldEngine {
     return this.world;
   }
 
+  recordToolActivity(toolName: string, summary: string): WorldSnapshot {
+    const world = this.require();
+    const change: ActivityEntry = {
+      id: makeId("act"),
+      at: Date.now(),
+      actor: "agent",
+      toolName,
+      summary,
+    };
+    return this.commit(world, change);
+  }
+
   createWorld(input: { name: string; premise: string; tone: Tone }): WorldSnapshot {
     const now = Date.now();
     const sceneId = makeId("scn");
