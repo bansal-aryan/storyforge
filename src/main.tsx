@@ -9,13 +9,25 @@ import { registerStoryforgeTools } from "./webmcp/register";
 import { setConfirmationUi } from "./webmcp/confirmation";
 
 async function bootstrap() {
-  const stored = await loadWorld();
+  let stored = null;
+  try {
+    stored = await loadWorld();
+  } catch (error) {
+    console.warn("The saved campaign could not be read; starting a fresh inheritance.", error);
+  }
   const currentSave = stored?.name === "Eclipse Inheritance"
     && stored.gameplay
     && Array.isArray(stored.gameplay.inventory)
     && Array.isArray(stored.gameplay.weaponPickups)
-    && stored.gameplay.enemies.every((enemy) => typeof enemy.maxHp === "number");
-  if (currentSave) {
+    && Array.isArray(stored.gameplay.enemies)
+    && stored.gameplay.enemies.every((enemy) => typeof enemy.maxHp === "number")
+    && Array.isArray(stored.gameplay.retinue)
+    && Array.isArray(stored.gameplay.banter)
+    && typeof stored.gameplay.pressure?.value === "number"
+    && typeof stored.gameplay.recruitment?.offerReady === "boolean"
+    && typeof stored.gameplay.companion?.ability?.id === "string"
+    && Array.isArray(stored.gameplay.companion?.memories);
+  if (currentSave && stored) {
     engine.load(stored);
   }
   else engine.loadEclipseInheritance();
@@ -29,11 +41,20 @@ async function bootstrap() {
     saveTimer = window.setTimeout(() => { void saveWorld(snapshot); }, 180);
   });
 
-  const registration = await registerStoryforgeTools();
-  useWorldStore.getState().setWebMcp(registration.available ? "available" : "unavailable");
+  try {
+    const registration = await registerStoryforgeTools();
+    useWorldStore.getState().setWebMcp(registration.available ? "available" : "unavailable");
+  } catch (error) {
+    console.warn("WebMCP registration was unavailable; gameplay will continue normally.", error);
+    useWorldStore.getState().setWebMcp("unavailable");
+  }
 }
 
-void bootstrap();
+void bootstrap().catch((error) => {
+  console.error("Campaign bootstrap failed; recovering with a fresh world.", error);
+  engine.loadEclipseInheritance();
+  useWorldStore.getState().setSnapshot(engine.snapshot());
+});
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode><App /></StrictMode>,
