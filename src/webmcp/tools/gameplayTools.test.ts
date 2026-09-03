@@ -4,6 +4,8 @@ import { createEclipseInheritance } from "../../engine/seed";
 import { executeCommandElias } from "./commandElias";
 import { executeExplainNextObjective } from "./explainNextObjective";
 import { executeInspectBattlefield } from "./inspectBattlefield";
+import { executeInspectFellowship } from "./inspectFellowship";
+import { executeProposeBattlePlan } from "./proposeBattlePlan";
 
 function context(engine: WorldEngine) {
   return { engine, actor: "agent" as const };
@@ -42,5 +44,21 @@ describe("gameplay WebMCP tools", () => {
     const result = await executeCommandElias({ mode: "berserk" }, context(engine));
     expect(result.status).toBe("error");
     expect(engine.snapshot().gameplay!.companion.mode).toBe("follow");
+  });
+
+  it("exposes fellowship reasoning and proposes an approval-gated plan", async () => {
+    const engine = new WorldEngine(createEclipseInheritance());
+    const elias = engine.snapshot().gameplay!.companion;
+    const objective = engine.snapshot().gameplay!.objectives[0]!;
+    const enemy = engine.snapshot().gameplay!.enemies[0]!;
+    engine.stageOneInteract(objective);
+    for (let hit = 0; hit < enemy.maxHp; hit += 1) engine.stageOneAttack(enemy);
+    engine.stageOneInteract(elias); engine.resolveRecruitment(0);
+    const inspection = await executeInspectFellowship({}, context(engine));
+    expect(inspection.status).toBe("ok");
+    expect("members" in inspection.data && inspection.data.members).toHaveLength(1);
+    const proposal = await executeProposeBattlePlan({}, context(engine));
+    expect(proposal.status).toBe("ok");
+    expect(engine.snapshot().gameplay?.pendingBattlePlan?.source).toBe("agent");
   });
 });

@@ -34,6 +34,8 @@ The three judge-facing gameplay tools are:
 - `inspect_battlefield` — reads health, objectives, enemies, boss phase, recruitment trial, persistent fellowship, realm pressure, pickups, Seal state, and Portal state.
 - `explain_next_objective` — recommends only actions allowed by the current canonical quest state.
 - `command_companion` — changes the active companion between `follow`, `guard`, `focus`, and `hold`; the reversible action is attributed to the agent and shown in the activity panel.
+- `inspect_fellowship` — reads companion health, trust, tactics, relationships, ability readiness, combos, autonomy, and the current grounded recommendation.
+- `propose_battle_plan` — creates a coordinated multi-companion plan and sends it to the player's in-game approval card without executing it.
 
 Additional world-model tools demonstrate memory search, continuity validation, human-approved story proposals, and durable world rules. Mutating story operations create pending proposals. The player can accept or reject them in the game. Destructive rule changes use WebMCP's user-interaction callback when available.
 
@@ -64,6 +66,8 @@ Controls can be rebound from the in-game settings panel.
 Voice and typed commands can address any recruited companion by name—for example, “Elias, cover me,” “Lira, use your ability,” “everyone regroup,” or “Kael, what should we do?” Typed messages have a dedicated Send button and also submit with Enter. Microphone status and browser/permission errors are shown beneath the input instead of failing silently. Companions can discuss health, objectives, hazards, bosses, abilities, memories, and personal concerns. Available voice quality and speech recognition support depend on the browser and operating system; microphone input requires HTTPS and browser permission.
 
 The fellowship recommendation engine continuously evaluates party health, individual cooldowns, realm pressure, incoming telegraphs, remaining quest gates, and boss phases. It surfaces an explainable recommendation with a one-click **Do it** action and voices urgent warnings proactively. Commands such as “heal the party,” “someone interrupt that attack,” “mark the strongest enemy,” “what is our best move?” and “do it” infer the appropriate available companion and grounded engine action.
+
+The Party screen supports three autonomy levels: **Manual** waits for direct commands, **Advisory** recommends plans that require approval, and **Trusted** may execute only urgent defensive responses. Companion relationships unlock cooperative abilities such as Windguided Arrow and Runic Bulwark. Players or agents can propose battle plans with one assignment per healthy companion; every coordinated plan remains reviewable before execution.
 
 ## Verify
 

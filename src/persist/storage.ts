@@ -3,7 +3,7 @@ import type { WorldSnapshot } from "../types/world";
 
 // Bump this key whenever required campaign fields change. Old IndexedDB saves
 // must never be handed directly to React with a newer runtime shape.
-const KEY = "storyforge:world:v5";
+const KEY = "storyforge:world:v6";
 
 export async function loadWorld(): Promise<WorldSnapshot | null> {
   return (await get<WorldSnapshot>(KEY)) ?? null;

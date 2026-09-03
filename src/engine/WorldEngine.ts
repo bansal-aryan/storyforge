@@ -20,6 +20,7 @@ import type {
   WorldSnapshot,
   WorldSummary,
   CampaignStage,
+  StageGameplay,
 } from "../types/world";
 import { createStageGameplay, STAGES } from "./campaign";
 import { checkContinuity } from "./continuity";
@@ -261,7 +262,7 @@ export class WorldEngine {
         if (game.companion.recruited && !retinue.some((ally) => ally.id === game.companion.id)) {
           retinue.push({ id: game.companion.id, name: game.companion.name, role: game.companion.role, hp: game.companion.hp, maxHp: game.companion.maxHp, weaponId: game.companion.weaponId, ability: game.companion.ability, tactic: game.companion.mode, trust: game.companion.trust, bond: game.companion.bond, personality: game.companion.personality, motivation: game.companion.motivation, fear: game.companion.fear, memories: [...game.companion.memories, `Survived ${game.biome.name} beside the heir.`] });
         }
-        draft.gameplay = createStageGameplay(nextStage, inventory, game.player.maxHp, retinue);
+        draft.gameplay = createStageGameplay(nextStage, inventory, game.player.maxHp, retinue, { autonomy: game.autonomy, relationships: game.relationships, combos: game.combos });
         if (inventory.some((item) => item.id === equippedWeapon)) draft.gameplay.player.weaponId = equippedWeapon;
         return;
       }
@@ -359,6 +360,11 @@ export class WorldEngine {
       state.companion.memories.push(`The heir answered: ${chosen}`);
       state.banter.unshift({ speaker: state.companion.name, line: choice === 0 ? "All right, friend. From here on, we leave together." : "I will take that bargain. Earn the friendship after." });
       state.recruitment.offerReady = false;
+      for (const veteran of state.retinue) {
+        if (!state.relationships.some((relationship) => relationship.members.includes(veteran.id) && relationship.members.includes(state.companion.id))) {
+          state.relationships.push({ members: [veteran.id, state.companion.id], score: 10, status: "uneasy", lastMoment: `Met in ${state.biome.name}.` });
+        }
+      }
       state.storyLine = summary;
       state.banter = state.banter.slice(0, 4);
       if (!draft.adventure.party.some((member) => member.entityId === state.companion.id)) {
@@ -598,6 +604,98 @@ export class WorldEngine {
     if (!recommendation) throw new Error("Recruit a companion before requesting a fellowship plan.");
     if (recommendation.action === "ability") return this.useCompanionAbility(recommendation.memberId);
     return this.setFellowshipMemberTactic(recommendation.memberId, recommendation.action);
+  }
+
+  setAutonomy(mode: "manual" | "advisory" | "trusted"): { summary: string } {
+    const world = this.require();
+    const summary = mode === "manual" ? "The fellowship waits for direct commands." : mode === "advisory" ? "The fellowship offers plans but waits for approval." : "Trusted companions may execute urgent defensive actions.";
+    const next = produce(world, (draft) => { draft.gameplay!.autonomy = mode; draft.gameplay!.storyLine = summary; });
+    this.commit(next, { id: makeId("act"), at: Date.now(), actor: "human", toolName: "set_autonomy", summary, data: { mode } });
+    return { summary };
+  }
+
+  proposeBattlePlan(source: "human" | "agent" = "human"): NonNullable<StageGameplay["pendingBattlePlan"]> {
+    const world = this.require();
+    const game = this.requireStageOne();
+    const members = [...game.retinue, ...(game.companion.recruited ? [game.companion] : [])].filter((member) => member.hp > 0);
+    if (!members.length) throw new Error("Recruit a companion before coordinating a plan.");
+    const recommendation = this.getFellowshipRecommendation();
+    const assignments = members.map((member) => ({ memberId: member.id, memberName: member.name, action: (member.id === recommendation?.memberId ? recommendation.action : member.ability.readyAt <= Date.now() && game.boss.awakened ? "ability" : member.role.includes("Golem") ? "guard" : "focus") as "ability" | "guard" | "focus" | "follow" }));
+    const plan: NonNullable<StageGameplay["pendingBattlePlan"]> = { id: makeId("prp"), source, headline: game.boss.awakened ? `Fellowship assault on ${game.boss.name}` : `Coordinated push toward ${game.objectives.find((objective) => !objective.completed)?.label ?? "the boss"}`, reason: recommendation?.reason ?? this.getNextObjectiveGuidance().reason, assignments, status: "pending" };
+    const next = produce(world, (draft) => { draft.gameplay!.pendingBattlePlan = plan; });
+    this.commit(next, { id: makeId("act"), at: Date.now(), actor: source, toolName: "propose_battle_plan", summary: `${source === "agent" ? "Agent" : "Fellowship"} proposes: ${plan.headline}.`, data: { planId: plan.id } });
+    return plan;
+  }
+
+  approveBattlePlan(): { summary: string } {
+    const plan = this.requireStageOne().pendingBattlePlan;
+    if (!plan || plan.status !== "pending") throw new Error("There is no pending battle plan.");
+    const assignments = [...plan.assignments];
+    const world = this.require();
+    const accepted = produce(world, (draft) => { draft.gameplay!.pendingBattlePlan = null; });
+    this.sync(accepted, `Approved ${plan.headline}.`);
+    const completed: string[] = [];
+    for (const assignment of assignments) {
+      try {
+        const result = assignment.action === "ability" ? this.useCompanionAbility(assignment.memberId) : this.setFellowshipMemberTactic(assignment.memberId, assignment.action);
+        completed.push(result.summary);
+      } catch { /* A cooldown may change while the player considers the plan. */ }
+    }
+    const summary = completed.length ? completed.join(" ") : "The fellowship holds its current formation.";
+    return { summary };
+  }
+
+  rejectBattlePlan(): void {
+    const world = this.require();
+    if (!world.gameplay?.pendingBattlePlan) return;
+    const next = produce(world, (draft) => { draft.gameplay!.pendingBattlePlan = null; });
+    this.sync(next, "The proposed battle plan was declined.");
+  }
+
+  runTrustedAutonomy(): { summary: string } | null {
+    const game = this.requireStageOne();
+    if (game.autonomy !== "trusted") return null;
+    const recommendation = this.getFellowshipRecommendation();
+    if (!recommendation || recommendation.urgency !== "high") return null;
+    try { return this.applyFellowshipRecommendation(); } catch { return null; }
+  }
+
+  getAvailableCombos() {
+    const game = this.requireStageOne();
+    const present = new Set([...game.retinue, ...(game.companion.recruited ? [game.companion] : [])].filter((member) => member.hp > 0 && member.trust >= 30).map((member) => member.id));
+    return game.combos.filter((combo) => combo.members.every((id) => present.has(id))).map((combo) => ({ ...combo, ready: combo.readyAt <= Date.now() }));
+  }
+
+  getFellowshipState() {
+    const game = this.requireStageOne();
+    const members = [...game.retinue, ...(game.companion.recruited ? [game.companion] : [])];
+    return {
+      autonomy: game.autonomy,
+      members: members.map((member) => ({ id: member.id, name: member.name, role: member.role, hp: member.hp, maxHp: member.maxHp, tactic: member.tactic, trust: member.trust, bond: member.bond, ability: { name: member.ability.name, description: member.ability.description, ready: member.ability.readyAt <= Date.now() }, latestMemory: member.memories[member.memories.length - 1] ?? null })),
+      relationships: game.relationships,
+      availableCombos: this.getAvailableCombos(),
+      recommendation: this.getFellowshipRecommendation(),
+      pendingPlan: game.pendingBattlePlan,
+    };
+  }
+
+  useFellowshipCombo(comboId: string, now = Date.now()): { summary: string } {
+    const world = this.require();
+    const combo = this.getAvailableCombos().find((candidate) => candidate.id === comboId);
+    if (!combo) throw new Error("That combo is not unlocked by the current fellowship.");
+    if (!combo.ready) throw new Error(`${combo.name} is still recharging.`);
+    const next = produce(world, (draft) => {
+      const state = draft.gameplay!;
+      const stored = state.combos.find((candidate) => candidate.id === comboId)!; stored.readyAt = now + stored.cooldownMs;
+      if (comboId === "windguided-arrow") state.enemies.forEach((enemy) => { if (enemy.alive) { enemy.hp = Math.max(0, enemy.hp - 3); enemy.alive = enemy.hp > 0; } });
+      else { state.player.hp = Math.min(state.player.maxHp, state.player.hp + 30); state.pressure.value = Math.max(0, state.pressure.value - 25); state.retinue.forEach((member) => { member.hp = Math.min(member.maxHp, member.hp + 20); }); }
+      const relationship = state.relationships.find((candidate) => candidate.members.every((id) => combo.members.includes(id)));
+      if (relationship) { relationship.score = Math.min(100, relationship.score + 8); relationship.status = relationship.score >= 70 ? "inseparable" : relationship.score >= 25 ? "friends" : "uneasy"; relationship.lastMoment = `Performed ${combo.name}.`; }
+      state.storyLine = `${combo.name}! Two companions move as one.`;
+    });
+    const summary = `${combo.name}! Two companions move as one.`;
+    this.commit(next, { id: makeId("act"), at: now, actor: "human", toolName: "fellowship_combo", summary, data: { comboId } });
+    return { summary };
   }
 
   combatTick(input: { player: { x: number; y: number }; companion: { x: number; y: number }; dodging: boolean; now: number }): void {

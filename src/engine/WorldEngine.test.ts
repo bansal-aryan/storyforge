@@ -245,6 +245,27 @@ describe("WorldEngine", () => {
     expect(engine.snapshot().gameplay!.enemies.reduce((total, enemy) => total + enemy.hp, 0)).toBeLessThan(healthBefore);
   });
 
+  it("proposes a coordinated plan and waits for human approval", () => {
+    const engine = new WorldEngine(createEclipseInheritance());
+    const game = engine.snapshot().gameplay!;
+    engine.stageOneInteract(game.objectives[0]!);
+    const enemy = game.enemies[0]!;
+    for (let hit = 0; hit < enemy.maxHp; hit += 1) engine.stageOneAttack(enemy);
+    engine.stageOneInteract(game.companion); engine.resolveRecruitment(0);
+    const plan = engine.proposeBattlePlan("agent");
+    expect(plan.assignments).toHaveLength(1);
+    expect(engine.snapshot().gameplay?.pendingBattlePlan?.source).toBe("agent");
+    engine.approveBattlePlan();
+    expect(engine.snapshot().gameplay?.pendingBattlePlan).toBeNull();
+  });
+
+  it("only runs urgent automatic actions in trusted mode", () => {
+    const engine = new WorldEngine(createEclipseInheritance());
+    expect(engine.runTrustedAutonomy()).toBeNull();
+    engine.setAutonomy("trusted");
+    expect(engine.snapshot().gameplay?.autonomy).toBe("trusted");
+  });
+
   it("collects and equips a level weapon in the canonical hotbar inventory", () => {
     const engine = new WorldEngine(createEclipseInheritance());
     const pickup = engine.snapshot().gameplay!.weaponPickups[0]!;

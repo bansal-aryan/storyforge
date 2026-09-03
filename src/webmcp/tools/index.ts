@@ -6,6 +6,8 @@ import { explainNextObjectiveDef, executeExplainNextObjective } from "./explainN
 import { getAdventureStateDef, executeGetAdventureState } from "./getAdventureState";
 import { getWorldSummaryDef, executeGetWorldSummary } from "./getWorldSummary";
 import { inspectBattlefieldDef, executeInspectBattlefield } from "./inspectBattlefield";
+import { inspectFellowshipDef, executeInspectFellowship } from "./inspectFellowship";
+import { proposeBattlePlanDef, executeProposeBattlePlan } from "./proposeBattlePlan";
 import { movePartyDef, executeMoveParty } from "./moveParty";
 import { playAsCharacterDef, executePlayAsCharacter } from "./playAsCharacter";
 import { queryMemoryDef, executeQueryMemory } from "./queryMemory";
@@ -14,6 +16,8 @@ import type { ToolContext } from "./types";
 
 export const TOOLS = [
   { def: inspectBattlefieldDef, run: executeInspectBattlefield },
+  { def: inspectFellowshipDef, run: executeInspectFellowship },
+  { def: proposeBattlePlanDef, run: executeProposeBattlePlan },
   { def: explainNextObjectiveDef, run: executeExplainNextObjective },
   { def: commandEliasDef, run: executeCommandElias },
   { def: getAdventureStateDef, run: executeGetAdventureState },

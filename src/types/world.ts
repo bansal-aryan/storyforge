@@ -167,6 +167,10 @@ export interface StageGameplay {
   enemies: StageEnemy[];
   companion: FellowshipMember & { x: number; y: number; recruited: boolean; mode: "follow" | "focus" | "guard" | "hold" };
   retinue: FellowshipMember[];
+  autonomy: "manual" | "advisory" | "trusted";
+  relationships: Array<{ members: [string, string]; score: number; status: "uneasy" | "friends" | "inseparable"; lastMoment: string }>;
+  combos: Array<{ id: string; name: string; members: [string, string]; description: string; readyAt: number; cooldownMs: number }>;
+  pendingBattlePlan: null | { id: string; source: "human" | "agent"; headline: string; reason: string; assignments: Array<{ memberId: string; memberName: string; action: "ability" | "guard" | "focus" | "follow" }>; status: "pending" | "accepted" | "rejected" };
   recruitment: { requiredObjectives: number; requiredKills: number; requiresWeapon: boolean; description: string; offerReady: boolean; prompt: string; choices: [string, string] };
   guardiansDefeated: number;
   pressure: { name: string; value: number; max: number; description: string };

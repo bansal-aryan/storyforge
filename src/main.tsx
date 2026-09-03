@@ -26,7 +26,10 @@ async function bootstrap() {
     && typeof stored.gameplay.pressure?.value === "number"
     && typeof stored.gameplay.recruitment?.offerReady === "boolean"
     && typeof stored.gameplay.companion?.ability?.id === "string"
-    && Array.isArray(stored.gameplay.companion?.memories);
+    && Array.isArray(stored.gameplay.companion?.memories)
+    && Array.isArray(stored.gameplay.relationships)
+    && Array.isArray(stored.gameplay.combos)
+    && typeof stored.gameplay.autonomy === "string";
   if (currentSave && stored) {
     engine.load(stored);
   }

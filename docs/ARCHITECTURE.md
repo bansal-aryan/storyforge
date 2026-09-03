@@ -167,11 +167,13 @@ Text commands are the reliable baseline. Browser speech recognition and speech s
 
 ### Registered tool surface
 
-The judge-facing path uses three purpose-built gameplay tools:
+The judge-facing path uses five purpose-built gameplay tools:
 
 - `inspect_battlefield` reads the live encounter without mutation
 - `explain_next_objective` derives a legal next action from quest gates
 - `command_companion` applies a reversible tactical stance and logs agent attribution
+- `inspect_fellowship` reads the party's tactical, social, cooldown, combo, and autonomy state
+- `propose_battle_plan` generates a multi-member plan that remains pending until the player approves it
 
 Additional tools expose world summaries, memory, continuity checks, party and quest proposals, companion dialogue proposals, and confirmed world rules. Story-changing proposals are displayed in the game with Accept and Reject controls.
 
@@ -201,6 +203,8 @@ Core responsibilities:
 - Gate recruitment behind authored trials and use a stage-specific pressure meter to make each realm mechanically distinct.
 - Persist each companion's personality, motivation, fear, trust, bond, memories, tactic, health, and ability cooldown across realm transitions. Recruitment dialogue choices seed relationship state, and contextual banter exposes that state during play.
 - Route speech through per-character rate, pitch, and preferred natural system-voice profiles. Name-aware voice commands can change any recruited member's tactic or activate their signature ability; boss state transitions trigger separate voiced lines and visible captions.
+- Support Manual, Advisory, and Trusted autonomy. Trusted mode is deliberately bounded to high-urgency defensive recommendations; multi-member battle plans remain approval-gated regardless of source.
+- Track pairwise companion relationships and use trust thresholds to unlock cooperative combos. `inspect_fellowship` exposes this canonical social and tactical model, while `propose_battle_plan` creates a visible plan for human approval.
 
 ## Delivery strategy
 

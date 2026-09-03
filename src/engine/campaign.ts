@@ -26,7 +26,7 @@ export const STAGES: Record<CampaignStage, StageDefinition> = {
 const objectivePositions = [[520, 320], [1120, 880], [1700, 350]] as const;
 const enemyPositions = [[650, 650], [980, 440], [1370, 870], [1580, 600]] as const;
 
-export function createStageGameplay(stage: CampaignStage, inventory: InventoryItem[], playerMaxHp = 100, retinue: StageGameplay["retinue"] = []): StageGameplay {
+export function createStageGameplay(stage: CampaignStage, inventory: InventoryItem[], playerMaxHp = 100, retinue: StageGameplay["retinue"] = [], campaign?: Pick<StageGameplay, "autonomy" | "relationships" | "combos">): StageGameplay {
   const def = STAGES[stage];
   const supportingAllies = retinue.filter((ally) => ally.id !== def.companion.id);
   return {
@@ -37,6 +37,13 @@ export function createStageGameplay(stage: CampaignStage, inventory: InventoryIt
     enemies: def.enemyKinds.map((kind, index) => ({ id: `stage-${stage}-enemy-${index + 1}`, x: enemyPositions[index]![0], y: enemyPositions[index]![1], hp: 4 + stage + (index % 2), maxHp: 4 + stage + (index % 2), alive: true, kind, intent: "idle", attackReadyAt: 0 })),
     companion: { ...def.companion, x: 400, y: 600, hp: 100 + stage * 5, maxHp: 100 + stage * 5, recruited: stage === 5, mode: "follow", tactic: "follow", trust: stage === 5 ? 80 : 0, bond: stage === 5 ? "trusted" : "new", memories: stage === 5 ? ["Returned to the Citadel with the fellowship intact."] : [] },
     retinue: supportingAllies,
+    autonomy: campaign?.autonomy ?? "advisory",
+    relationships: campaign?.relationships ?? [],
+    combos: campaign?.combos ?? [
+      { id: "windguided-arrow", name: "Windguided Arrow", members: ["chr_elias", "chr_kael"], description: "Kael bends the wind around Elias's shot, striking every enemy.", readyAt: 0, cooldownMs: 16000 },
+      { id: "runic-bulwark", name: "Runic Bulwark", members: ["chr_lira", "chr_rook"], description: "Lira inscribes Rook's armor, healing and shielding the fellowship.", readyAt: 0, cooldownMs: 18000 },
+    ],
+    pendingBattlePlan: null,
     recruitment: { ...def.recruitment, offerReady: false, prompt: `${def.companion.name} studies the heir in silence. Why should they risk everything for this fellowship?`, choices: ["We protect one another—no one gets left behind.", "Help me win, and I will help you achieve your purpose."] },
     guardiansDefeated: 0,
     pressure: { ...def.pressure, value: 0 },
