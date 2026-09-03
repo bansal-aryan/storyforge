@@ -4,7 +4,7 @@ import type { ToolContext } from "./types";
 export async function executeInspectBattlefield(_input: Record<string, unknown>, ctx: ToolContext) {
   try {
     const state = ctx.engine.getBattlefieldState();
-    const summary = `${state.objective} The heir has ${state.player.hp}/${state.player.maxHp} health; ${state.companion.name} is ${state.companion.recruited ? `${state.companion.mode} at ${state.companion.hp}/${state.companion.maxHp} health` : "not recruited"}; ${state.enemies.length} guardians remain.`;
+    const summary = `${state.objective} The heir has ${state.player.hp}/${state.player.maxHp} health; ${state.companion.name} is ${state.companion.recruited ? `${state.companion.mode} at ${state.companion.hp}/${state.companion.maxHp} health` : "awaiting their trial"}; ${state.retinue.length} veteran allies remain with the party; ${state.enemies.length} guardians remain; ${state.pressure.name} is ${state.pressure.value}/${state.pressure.max}.`;
     return serializeToolResult(state, summary);
   } catch (error) {
     return serializeError(error instanceof Error ? error.message : "Could not inspect the battlefield.");

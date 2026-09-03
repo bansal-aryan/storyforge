@@ -142,13 +142,34 @@ export interface InventoryItem {
   description: string;
 }
 
+export interface FellowshipMember {
+  id: string;
+  name: string;
+  role: string;
+  hp: number;
+  maxHp: number;
+  weaponId: string;
+  ability: { id: string; name: string; description: string; cooldownMs: number; readyAt: number };
+  tactic: "follow" | "focus" | "guard" | "hold";
+  trust: number;
+  bond: "new" | "trusted" | "devoted";
+  personality: string;
+  motivation: string;
+  fear: string;
+  memories: string[];
+}
+
 export interface StageGameplay {
   stage: CampaignStage;
   biome: { name: string; subtitle: string; theme: "forest" | "archives" | "forge" | "peaks" | "citadel" };
   player: { x: number; y: number; hp: number; maxHp: number; essence: number; weaponId: string };
   objectives: Array<{ id: string; x: number; y: number; label: string; completed: boolean }>;
   enemies: StageEnemy[];
-  companion: { id: string; name: string; role: string; x: number; y: number; hp: number; maxHp: number; recruited: boolean; weaponId: string; mode: "follow" | "focus" | "guard" | "hold" };
+  companion: FellowshipMember & { x: number; y: number; recruited: boolean; mode: "follow" | "focus" | "guard" | "hold" };
+  retinue: FellowshipMember[];
+  recruitment: { requiredObjectives: number; requiredKills: number; requiresWeapon: boolean; description: string; offerReady: boolean; prompt: string; choices: [string, string] };
+  guardiansDefeated: number;
+  pressure: { name: string; value: number; max: number; description: string };
   boss: { id: string; name: string; title: string; x: number; y: number; hp: number; maxHp: number; phase: 1 | 2 | 3; attackReadyAt: number; intent: "shielded" | "idle" | "strike" | "summon"; awakened: boolean; defeated: boolean };
   seal: { id: string; name: string; icon: string };
   sealCollected: boolean;
@@ -161,6 +182,7 @@ export interface StageGameplay {
   campaignComplete: boolean;
   objective: string;
   storyLine: string;
+  banter: Array<{ speaker: string; line: string }>;
 }
 
 export type WorldPatch =

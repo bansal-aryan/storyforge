@@ -257,7 +257,11 @@ export class WorldEngine {
         draft.currentScene = { ...draft.currentScene, id: makeId("scn"), title: `Arrival in ${nextDefinition.biome.name}`, locationId: following?.locationId ?? null, tick: draft.currentScene.tick + 1 };
         const inventory = [...game.inventory];
         const equippedWeapon = game.player.weaponId;
-        draft.gameplay = createStageGameplay(nextStage, inventory, game.player.maxHp);
+        const retinue = [...game.retinue];
+        if (game.companion.recruited && !retinue.some((ally) => ally.id === game.companion.id)) {
+          retinue.push({ id: game.companion.id, name: game.companion.name, role: game.companion.role, hp: game.companion.hp, maxHp: game.companion.maxHp, weaponId: game.companion.weaponId, ability: game.companion.ability, tactic: game.companion.mode, trust: game.companion.trust, bond: game.companion.bond, personality: game.companion.personality, motivation: game.companion.motivation, fear: game.companion.fear, memories: [...game.companion.memories, `Survived ${game.biome.name} beside the heir.`] });
+        }
+        draft.gameplay = createStageGameplay(nextStage, inventory, game.player.maxHp, retinue);
         if (inventory.some((item) => item.id === equippedWeapon)) draft.gameplay.player.weaponId = equippedWeapon;
         return;
       }
@@ -295,8 +299,20 @@ export class WorldEngine {
 
       const objective = game.objectives.find((candidate) => !candidate.completed && near(candidate, 34));
       if (objective) {
+        const objectiveIndex = game.objectives.findIndex((candidate) => candidate.id === objective.id);
+        const orderedRealm = game.stage === 2 || game.stage === 4 || game.stage === 5;
+        if (orderedRealm && game.objectives.slice(0, objectiveIndex).some((candidate) => !candidate.completed)) {
+          type = "hazard";
+          game.pressure.value = Math.min(game.pressure.max, game.pressure.value + 25);
+          summary = `${objective.label} rejects you. The rites must be completed in order.`;
+          game.storyLine = `${summary} ${game.pressure.name} rises to ${game.pressure.value}/${game.pressure.max}.`;
+          return;
+        }
         type = "objective";
         objective.completed = true;
+        game.pressure.value = Math.max(0, game.pressure.value - 35);
+        const witness = game.retinue[game.objectives.filter((candidate) => candidate.completed).length % Math.max(1, game.retinue.length)];
+        if (witness) game.banter.unshift({ speaker: witness.name, line: `${objective.label} is safe. Good work—keep moving.` });
         const count = game.objectives.filter((candidate) => candidate.completed).length;
         summary = `${objective.label} is restored.`;
         game.storyLine = `${objective.label} answers the heir. One more chain on ${game.boss.name} begins to break.`;
@@ -308,17 +324,88 @@ export class WorldEngine {
       }
 
       if (!game.companion.recruited && near(game.companion, 38)) {
-        type = "companion";
-        summary = `${game.companion.name} joins the heir's quest.`;
-        game.companion.recruited = true;
-        game.storyLine = `${game.companion.name} recognizes the restored Seal and pledges their strength to the final hunt.`;
-        if (!draft.adventure.party.some((member) => member.entityId === game.companion.id)) {
-          draft.adventure.party.push({ entityId: game.companion.id, role: "companion", agentControlled: true, archetype: game.companion.role, disposition: "Resolute, loyal", memory: [`Joined the heir in ${game.biome.name}.`] });
+        const completed = game.objectives.filter((candidate) => candidate.completed).length;
+        const hasWeapon = game.weaponPickups.every((candidate) => candidate.collected);
+        const trial = game.recruitment;
+        if (completed < trial.requiredObjectives || game.guardiansDefeated < trial.requiredKills || (trial.requiresWeapon && !hasWeapon)) {
+          type = "trial";
+          summary = `${game.companion.name} is not convinced yet: ${trial.description}`;
+          game.storyLine = summary;
+          return;
         }
+        type = "recruitment_offer";
+        summary = `${game.companion.name} is ready to hear why they should join you.`;
+        game.recruitment.offerReady = true;
+        game.storyLine = summary;
       }
     });
     if (type === "none") return { type, summary };
     this.commit(next, { id: makeId("act"), at: Date.now(), actor: "human", toolName: "interact", summary });
+    return { type, summary };
+  }
+
+  resolveRecruitment(choice: 0 | 1): { summary: string } {
+    const world = this.require();
+    const game = this.requireStageOne();
+    if (!game.recruitment.offerReady || game.companion.recruited) throw new Error("No companion is awaiting an answer.");
+    const chosen = game.recruitment.choices[choice];
+    const trustGain = choice === 0 ? 35 : 20;
+    const summary = `${game.companion.name} joins the fellowship. “${choice === 0 ? "Then we stand together." : "A bargain, then—but perhaps it can become more."}”`;
+    const next = produce(world, (draft) => {
+      const state = draft.gameplay!;
+      state.companion.recruited = true;
+      state.companion.trust = trustGain;
+      state.companion.bond = trustGain >= 30 ? "trusted" : "new";
+      state.companion.memories.push(`The heir answered: ${chosen}`);
+      state.banter.unshift({ speaker: state.companion.name, line: choice === 0 ? "All right, friend. From here on, we leave together." : "I will take that bargain. Earn the friendship after." });
+      state.recruitment.offerReady = false;
+      state.storyLine = summary;
+      state.banter = state.banter.slice(0, 4);
+      if (!draft.adventure.party.some((member) => member.entityId === state.companion.id)) {
+        draft.adventure.party.push({ entityId: state.companion.id, role: "companion", agentControlled: true, archetype: state.companion.role, disposition: state.companion.personality, memory: [...state.companion.memories] });
+      }
+    });
+    this.commit(next, { id: makeId("act"), at: Date.now(), actor: "human", toolName: "recruit_companion", summary, data: { choice, chosen } });
+    return { summary };
+  }
+
+  useCompanionAbility(memberId: string, now = Date.now()): { type: string; summary: string } {
+    const world = this.require();
+    const game = this.requireStageOne();
+    const member = game.companion.id === memberId && game.companion.recruited ? game.companion : game.retinue.find((ally) => ally.id === memberId);
+    if (!member) throw new Error("That companion is not in the fellowship.");
+    if (member.hp <= 0) throw new Error(`${member.name} is wounded.`);
+    if (member.ability.readyAt > now) throw new Error(`${member.ability.name} is still recharging.`);
+    let type = member.ability.id;
+    let summary = `${member.name} uses ${member.ability.name}.`;
+    const next = produce(world, (draft) => {
+      const state = draft.gameplay!;
+      const ally = state.companion.id === memberId ? state.companion : state.retinue.find((candidate) => candidate.id === memberId)!;
+      ally.ability.readyAt = now + ally.ability.cooldownMs;
+      ally.trust = Math.min(100, ally.trust + 2);
+      ally.bond = ally.trust >= 75 ? "devoted" : ally.trust >= 30 ? "trusted" : "new";
+      if (ally.ability.id === "mark") {
+        const target = [...state.enemies].filter((enemy) => enemy.alive).sort((a, b) => b.hp - a.hp)[0];
+        if (target) { target.hp = Math.max(0, target.hp - 4); target.alive = target.hp > 0; if (!target.alive) state.guardiansDefeated += 1; summary = `${ally.name} marks the strongest guardian and lands a piercing shot.`; }
+        else if (state.boss.awakened && !state.boss.defeated) { state.boss.hp = Math.max(0, state.boss.hp - 4); state.boss.defeated = state.boss.hp === 0; }
+      } else if (ally.ability.id === "clarity") {
+        state.player.essence = Math.min(100, state.player.essence + 30); state.pressure.value = Math.max(0, state.pressure.value - 35);
+      } else if (ally.ability.id === "bulwark") {
+        state.player.hp = Math.min(state.player.maxHp, state.player.hp + 18);
+        state.companion.hp = Math.min(state.companion.maxHp, state.companion.hp + 12);
+        state.retinue.forEach((candidate) => { candidate.hp = Math.min(candidate.maxHp, candidate.hp + 12); });
+      } else if (ally.ability.id === "gust") {
+        state.enemies.forEach((enemy) => { if (enemy.alive) { enemy.hp = Math.max(0, enemy.hp - 2); enemy.alive = enemy.hp > 0; if (!enemy.alive) state.guardiansDefeated += 1; enemy.intent = "recover"; enemy.attackReadyAt = now + 900; } });
+        if (state.boss.intent === "strike" || state.boss.intent === "summon") { state.boss.intent = "idle"; state.boss.attackReadyAt = now + 1200; }
+      }
+      const ready = state.objectives.every((objective) => objective.completed) && state.enemies.every((enemy) => !enemy.alive);
+      if (ready && !state.boss.defeated) { state.boss.awakened = true; if (state.boss.intent === "shielded") state.boss.intent = "idle"; state.objective = `Defeat ${state.boss.name} ${state.boss.title}.`; }
+      if (state.boss.defeated) state.objective = `Collect ${state.seal.name} from ${state.boss.name} (E).`;
+      state.storyLine = summary;
+      state.banter.unshift({ speaker: ally.name, line: ally.ability.id === "bulwark" ? "Behind me. I was made to hold." : ally.ability.id === "clarity" ? "Breathe. I remember the way forward." : ally.ability.id === "gust" ? "Heads down—this will be loud!" : "I see the opening. Take it!" });
+      state.banter = state.banter.slice(0, 4);
+    });
+    this.commit(next, { id: makeId("act"), at: now, actor: "human", toolName: "companion_ability", summary, data: { memberId, ability: type } });
     return { type, summary };
   }
 
@@ -339,7 +426,10 @@ export class WorldEngine {
         const blessingDamage = game.blessings.includes("fury") ? 1 : 0;
         const weaponDamage = (game.player.weaponId === "wpn_ember_axe" ? 2 : 1) + (options.heavy ? 1 : 0) + blessingDamage;
         enemy.hp -= weaponDamage;
+        const wasAlive = enemy.alive;
         enemy.alive = enemy.hp > 0;
+        if (wasAlive && !enemy.alive) game.guardiansDefeated += 1;
+        if (game.stage === 3 && options.heavy) game.pressure.value = Math.min(game.pressure.max, game.pressure.value + 18);
         game.player.essence = Math.max(0, game.player.essence - (options.heavy ? 12 : 4));
         summary = enemy.alive ? "A blighted guardian staggers." : "A blighted guardian falls.";
         game.storyLine = summary;
@@ -437,6 +527,9 @@ export class WorldEngine {
       objective: game.objective,
       player: { hp: game.player.hp, maxHp: game.player.maxHp, essence: game.player.essence, weapon: equipped?.name ?? game.player.weaponId },
       companion: { name: game.companion.name, role: game.companion.role, recruited: game.companion.recruited, hp: game.companion.hp, maxHp: game.companion.maxHp, mode: game.companion.mode },
+      retinue: game.retinue.map((ally) => ({ name: ally.name, role: ally.role, hp: ally.hp, maxHp: ally.maxHp })),
+      recruitmentTrial: { ...game.recruitment, guardiansDefeated: game.guardiansDefeated, objectivesCompleted: game.objectives.filter((objective) => objective.completed).length },
+      pressure: game.pressure,
       objectives: { completed: game.objectives.filter((objective) => objective.completed).length, total: game.objectives.length },
       enemies: activeEnemies,
       boss: { name: game.boss.name, title: game.boss.title, awakened: game.boss.awakened, defeated: game.boss.defeated, hp: game.boss.hp, maxHp: game.boss.maxHp, phase: game.boss.phase, intent: game.boss.intent },
@@ -452,6 +545,10 @@ export class WorldEngine {
     if (game.portalActive) return { objective: game.objective, recommendedAction: "Enter the glowing Portal in the northeast.", reason: `${game.boss.name} is defeated and ${game.seal.name} is secured.` };
     if (game.boss.defeated && !game.sealCollected) return { objective: game.objective, recommendedAction: `Collect ${game.seal.name} where ${game.boss.name} fell.`, reason: game.stage === 5 ? "The five Seals can now end the eclipse." : "The Portal cannot activate until the Seal is claimed." };
     if (game.boss.awakened) return { objective: game.objective, recommendedAction: game.companion.recruited ? `Set ${game.companion.name} to focus, dodge the telegraph, and strike ${game.boss.name}.` : `Recruit ${game.companion.name}, then confront ${game.boss.name}.`, reason: `${game.boss.name} is exposed in phase ${game.boss.phase}.` };
+    const trialReady = game.objectives.filter((objective) => objective.completed).length >= game.recruitment.requiredObjectives
+      && game.guardiansDefeated >= game.recruitment.requiredKills
+      && (!game.recruitment.requiresWeapon || game.weaponPickups.every((pickup) => pickup.collected));
+    if (!game.companion.recruited && trialReady) return { objective: game.objective, recommendedAction: `Return to ${game.companion.name} and ask them to join the fellowship.`, reason: `You completed their trial: ${game.recruitment.description}` };
     const incomplete = game.objectives.find((objective) => !objective.completed);
     if (incomplete) return { objective: game.objective, recommendedAction: `Travel to ${incomplete.label} and complete its ritual.`, reason: `${game.objectives.filter((objective) => objective.completed).length} of ${game.objectives.length} stage objectives are complete.` };
     return { objective: game.objective, recommendedAction: "Defeat the remaining guardians.", reason: `${game.enemies.filter((enemy) => enemy.alive).length} guardians still anchor ${game.boss.name}'s shield.` };
@@ -464,6 +561,18 @@ export class WorldEngine {
     let changed = false;
     const next = produce(world, (draft) => {
       const state = draft.gameplay!;
+      const unresolved = state.objectives.filter((objective) => !objective.completed).length;
+      if (unresolved > 0 && input.now % 1200 < 130 && state.stage !== 2 && state.stage !== 3) {
+        state.pressure.value = Math.min(state.pressure.max, state.pressure.value + (state.stage + unresolved));
+        changed = true;
+      }
+      if (state.pressure.value >= state.pressure.max) {
+        state.player.hp = Math.max(1, state.player.hp - (6 + state.stage));
+        state.player.essence = Math.max(0, state.player.essence - 18);
+        state.pressure.value = 45;
+        state.storyLine = `${state.pressure.name} overwhelms the heir. Complete an objective to find relief.`;
+        changed = true;
+      }
       const damageTarget = (target: "player" | "elias", amount: number) => {
         if (target === "player") {
           if (input.dodging) return;
@@ -539,7 +648,7 @@ export class WorldEngine {
     const bossDistance = Math.hypot(position.x - game.boss.x, position.y - game.boss.y);
     const canShootBoss = game.boss.awakened && !game.boss.defeated && bossDistance <= (game.companion.mode === "focus" ? 430 : range);
     if (canShootBoss && (game.companion.mode === "focus" || !target || target.distance > range)) {
-      const damage = game.blessings.includes("bond") ? 2 : 1;
+      const damage = (game.blessings.includes("bond") ? 2 : 1) + Math.min(2, game.retinue.filter((ally) => ally.hp > 0).length);
       const next = produce(world, (draft) => {
         const boss = draft.gameplay!.boss;
         boss.hp = Math.max(0, boss.hp - damage);
@@ -556,8 +665,10 @@ export class WorldEngine {
     const next = produce(world, (draft) => {
       const draftGame = draft.gameplay!;
       const enemy = draftGame.enemies.find((candidate) => candidate.id === target.enemy.id)!;
-      enemy.hp = Math.max(0, enemy.hp - (draftGame.blessings.includes("bond") ? 2 : 1));
+      const wasAlive = enemy.alive;
+      enemy.hp = Math.max(0, enemy.hp - ((draftGame.blessings.includes("bond") ? 2 : 1) + Math.min(2, draftGame.retinue.filter((ally) => ally.hp > 0).length)));
       enemy.alive = enemy.hp > 0;
+      if (wasAlive && !enemy.alive) draftGame.guardiansDefeated += 1;
       if (!enemy.alive) { type = "kill"; summary = `${draftGame.companion.name} drops a guardian with a clean strike.`; }
       if (target.distance < 48) {
         draftGame.companion.hp = Math.max(0, draftGame.companion.hp - 7);

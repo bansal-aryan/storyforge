@@ -197,6 +197,9 @@ Core responsibilities:
 - Use deterministic state updates so the player sees visible, reliable consequences.
 - Keep combat and quest gates data-driven so all five phases obey the same canonical rules.
 - Give each phase a distinct visual palette, enemy silhouettes, companion identity, collectible weapon, boss, and narrative objective.
+- Retain every successfully recruited companion in the travelling fellowship. The current realm's companion remains directly commandable, while veteran allies render in formation and add bounded support damage.
+- Gate recruitment behind authored trials and use a stage-specific pressure meter to make each realm mechanically distinct.
+- Persist each companion's personality, motivation, fear, trust, bond, memories, tactic, health, and ability cooldown across realm transitions. Recruitment dialogue choices seed relationship state, and contextual banter exposes that state during play.
 
 ## Delivery strategy
 

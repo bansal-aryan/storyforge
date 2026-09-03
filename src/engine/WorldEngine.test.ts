@@ -158,11 +158,13 @@ describe("WorldEngine", () => {
       const stage = engine.snapshot().gameplay!;
       expect(stage.stage).toBe(expectedStage);
 
-      if (!stage.companion.recruited) engine.stageOneInteract(stage.companion);
+      if (stage.recruitment.requiresWeapon) engine.stageOneInteract(stage.weaponPickups[0]!);
       for (const objective of stage.objectives) engine.stageOneInteract(objective);
       for (const enemy of stage.enemies) {
         for (let hit = 0; hit < enemy.maxHp; hit += 1) engine.stageOneAttack(enemy);
       }
+      if (!stage.companion.recruited) { engine.stageOneInteract(stage.companion); engine.resolveRecruitment(0); }
+      expect(engine.snapshot().gameplay?.companion.recruited).toBe(true);
 
       expect(engine.snapshot().gameplay?.boss.awakened).toBe(true);
       const boss = engine.snapshot().gameplay!.boss;
@@ -176,12 +178,43 @@ describe("WorldEngine", () => {
       if (expectedStage < 5) {
         expect(cleared.portalActive).toBe(true);
         engine.stageOneInteract({ x: 2070, y: 180 });
+        expect(engine.snapshot().gameplay?.retinue).toHaveLength(expectedStage === 4 ? 3 : expectedStage);
       } else {
         expect(cleared.portalActive).toBe(false);
         expect(cleared.campaignComplete).toBe(true);
         expect(engine.getAdventureState().quest.stages.every((questStage) => questStage.state === "complete")).toBe(true);
       }
     }
+  });
+
+  it("requires companions' realm-specific trials before recruitment", () => {
+    const engine = new WorldEngine(createEclipseInheritance());
+    const game = engine.snapshot().gameplay!;
+    expect(engine.stageOneInteract(game.companion).type).toBe("trial");
+    expect(engine.snapshot().gameplay?.companion.recruited).toBe(false);
+    engine.stageOneInteract(game.objectives[0]!);
+    const enemy = game.enemies[0]!;
+    for (let hit = 0; hit < enemy.maxHp; hit += 1) engine.stageOneAttack(enemy);
+    expect(engine.stageOneInteract(game.companion).type).toBe("recruitment_offer");
+    engine.resolveRecruitment(0);
+    expect(engine.snapshot().gameplay?.companion.recruited).toBe(true);
+    expect(engine.snapshot().gameplay?.companion.trust).toBe(35);
+    expect(engine.snapshot().gameplay?.companion.memories[0]).toContain("no one gets left behind");
+  });
+
+  it("gives recruited companions distinct active abilities with cooldowns", () => {
+    const engine = new WorldEngine(createEclipseInheritance());
+    const game = engine.snapshot().gameplay!;
+    engine.stageOneInteract(game.objectives[0]!);
+    const enemy = game.enemies[0]!;
+    for (let hit = 0; hit < enemy.maxHp; hit += 1) engine.stageOneAttack(enemy);
+    engine.stageOneInteract(game.companion);
+    engine.resolveRecruitment(0);
+    const totalBefore = engine.snapshot().gameplay!.enemies.reduce((total, candidate) => total + candidate.hp, 0);
+    const result = engine.useCompanionAbility("chr_elias", 1000);
+    expect(result.type).toBe("mark");
+    expect(engine.snapshot().gameplay!.enemies.reduce((total, candidate) => total + candidate.hp, 0)).toBeLessThan(totalBefore);
+    expect(() => engine.useCompanionAbility("chr_elias", 1001)).toThrow(/recharging/i);
   });
 
   it("collects and equips a level weapon in the canonical hotbar inventory", () => {
@@ -232,9 +265,10 @@ describe("WorldEngine", () => {
   it("lets a focused Elias contribute damage against Sylvara", () => {
     const engine = new WorldEngine(createEclipseInheritance());
     const game = engine.snapshot().gameplay!;
-    engine.stageOneInteract({ x: game.companion.x, y: game.companion.y });
     for (const grove of game.objectives) engine.stageOneInteract({ x: grove.x, y: grove.y });
     for (const enemy of game.enemies) for (let hit = 0; hit < enemy.maxHp; hit += 1) engine.stageOneAttack({ x: enemy.x, y: enemy.y });
+    engine.stageOneInteract({ x: game.companion.x, y: game.companion.y });
+    engine.resolveRecruitment(0);
     engine.setCompanionMode("focus");
     const before = engine.snapshot().gameplay!.boss.hp;
     const result = engine.companionCombatTick({ x: game.boss.x, y: game.boss.y });
@@ -245,7 +279,7 @@ describe("WorldEngine", () => {
   it("exposes a grounded battlefield snapshot for WebMCP", () => {
     const engine = new WorldEngine(createEclipseInheritance());
     const state = engine.getBattlefieldState();
-    expect(state.objective).toContain("Groves");
+    expect(state.objective).toContain("West Grove");
     expect(state.player.weapon).toBe("Heir's Crystal Sword");
     expect(state.enemies).toHaveLength(4);
     expect(state.portalActive).toBe(false);
@@ -254,7 +288,12 @@ describe("WorldEngine", () => {
   it("logs a reversible WebMCP tactical command as an agent action", () => {
     const engine = new WorldEngine(createEclipseInheritance());
     const elias = engine.snapshot().gameplay!.companion;
-    engine.stageOneInteract({ x: elias.x, y: elias.y });
+    const objective = engine.snapshot().gameplay!.objectives[0]!;
+    const enemy = engine.snapshot().gameplay!.enemies[0]!;
+    engine.stageOneInteract(objective);
+    for (let hit = 0; hit < enemy.maxHp; hit += 1) engine.stageOneAttack(enemy);
+    engine.stageOneInteract(elias);
+    engine.resolveRecruitment(0);
     engine.setCompanionMode("guard", { actor: "agent" });
     expect(engine.snapshot().gameplay!.companion.mode).toBe("guard");
     expect(engine.snapshot().activity[0]).toMatchObject({ actor: "agent", toolName: "command_companion" });

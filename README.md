@@ -17,11 +17,13 @@ The agent reads the real game state, returns grounded guidance, calls a reversib
 ## Playable loop
 
 1. Explore a scrolling forest with WASD or arrow keys.
-2. Recruit each realm's companion and collect optional weapons.
-3. Complete three realm-specific objectives and choose blessings.
+2. Earn each companion's trust through a realm-specific recruitment trial; every recruited ally stays with the fellowship for the rest of the campaign.
+3. Complete realm-specific objectives while managing Blight, Amnesia, Heat, Exposure, and Corruption.
 4. Fight telegraphed enemies with quick attacks, heavy attacks, and dodges.
-5. Command the active companion to follow, guard, focus, or hold.
+5. Command the active companion to follow, guard, focus, or hold while veteran allies fight beside you.
 6. Defeat Sylvara, Nihil, Ferrox, Astrax, and Voss; unite all five Eclipse Seals.
+
+Companions are persistent individuals rather than interchangeable bonuses. Recruitment ends with a dialogue choice that establishes trust and a remembered promise. Each friend keeps health, trust, bond level, tactical stance, memories, and an identity-specific ability: Elias's Hunter's Mark, Lira's Mnemonic Ward, Rook's Living Bulwark, or Kael's Tempest Break. The fellowship comments on objectives and ability use as it travels.
 
 ## WebMCP implementation
 
@@ -29,7 +31,7 @@ The app registers structured tools from `document.modelContext` or `navigator.mo
 
 The three judge-facing gameplay tools are:
 
-- `inspect_battlefield` — reads health, objectives, enemies, boss phase, pickups, Seal state, and Portal state for the active realm.
+- `inspect_battlefield` — reads health, objectives, enemies, boss phase, recruitment trial, persistent fellowship, realm pressure, pickups, Seal state, and Portal state.
 - `explain_next_objective` — recommends only actions allowed by the current canonical quest state.
 - `command_companion` — changes the active companion between `follow`, `guard`, `focus`, and `hold`; the reversible action is attributed to the agent and shown in the activity panel.
 
