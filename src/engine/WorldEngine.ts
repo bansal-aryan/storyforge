@@ -516,6 +516,24 @@ export class WorldEngine {
     return { mode, summary };
   }
 
+  setFellowshipMemberTactic(memberId: string, mode: "follow" | "focus" | "guard" | "hold"): { summary: string } {
+    const world = this.require();
+    const game = this.requireStageOne();
+    const member = game.companion.id === memberId && game.companion.recruited ? game.companion : game.retinue.find((ally) => ally.id === memberId);
+    if (!member) throw new Error("That companion is not in the fellowship.");
+    const summary = `${member.name} switches to ${mode}.`;
+    const next = produce(world, (draft) => {
+      const state = draft.gameplay!;
+      const ally = state.companion.id === memberId ? state.companion : state.retinue.find((candidate) => candidate.id === memberId)!;
+      ally.tactic = mode;
+      if (state.companion.id === memberId) state.companion.mode = mode;
+      state.banter.unshift({ speaker: ally.name, line: mode === "guard" ? "I have you. Stay close." : mode === "focus" ? "Point me at the priority target." : mode === "hold" ? "Holding here. Call when you need me." : "Right behind you." });
+      state.banter = state.banter.slice(0, 4);
+    });
+    this.commit(next, { id: makeId("act"), at: Date.now(), actor: "human", toolName: "voice_party_command", summary, data: { memberId, mode } });
+    return { summary };
+  }
+
   getBattlefieldState() {
     const game = this.requireStageOne();
     const equipped = game.inventory.find((item) => item.id === game.player.weaponId);
@@ -703,16 +721,18 @@ export class WorldEngine {
     this.commit(next, { id: makeId("act"), at: Date.now(), actor: "system", summary: "The heir takes damage." });
   }
 
-  getCompanionResponse(text: string): string {
+  getCompanionResponse(text: string, memberId?: string): string {
     const game = this.requireStageOne();
-    if (!game.companion.recruited) return `Find ${game.companion.name} in ${game.biome.name} before issuing companion commands.`;
+    const member = memberId ? (game.companion.id === memberId && game.companion.recruited ? game.companion : game.retinue.find((ally) => ally.id === memberId)) : game.companion;
+    if (!member || (member.id === game.companion.id && !game.companion.recruited)) return `Find ${game.companion.name} in ${game.biome.name} before issuing companion commands.`;
     const lowered = text.toLowerCase();
-    if (game.boss.defeated && !game.sealCollected) return `${game.seal.name} lies where ${game.boss.name} fell. Claim it before their power regathers.`;
-    if (game.portalActive) return "The Portal is stable. Cross when you are ready; I will follow.";
-    if (lowered.includes("scout") || lowered.includes("ahead")) return game.objectives.some((objective) => !objective.completed) ? `The remaining objectives are marked across ${game.biome.name}.` : `The objectives are complete. Finish the guardians and ${game.boss.name} will lose their shield.`;
-    if (lowered.includes("attack") || lowered.includes("strike")) return `I will keep the enemy off your flank. Your weapon must break ${game.boss.name}'s final defense.`;
-    if (lowered.includes("protect") || lowered.includes("guard")) return "Stay mobile. I have your back, but the inheritance answers only to you.";
-    return `We have completed ${game.objectives.filter((objective) => objective.completed).length} of ${game.objectives.length} objectives in ${game.biome.name}.`;
+    if (game.boss.defeated && !game.sealCollected) return `${game.seal.name} lies where ${game.boss.name} fell. Let's finish this together.`;
+    if (game.portalActive) return member.id === "chr_kael" ? "Another impossible road? Good. I was getting bored." : "The Portal is stable. Cross when you are ready; I'm with you.";
+    if (lowered.includes("how are you") || lowered.includes("okay")) return `${member.fear} still weighs on me—but I trust this fellowship. Trust stands at ${member.trust}.`;
+    if (lowered.includes("scout") || lowered.includes("ahead")) return member.id === "chr_lira" ? `I can read the path. ${game.objectives.filter((objective) => !objective.completed).length} bindings remain.` : `The next objective is marked. I'll watch our flank.`;
+    if (lowered.includes("attack") || lowered.includes("strike")) return member.id === "chr_rook" ? "Threat identified. I will make an opening, friend." : `Understood. ${game.boss.name} won't get a quiet moment.`;
+    if (lowered.includes("protect") || lowered.includes("guard")) return member.id === "chr_kael" ? "Stay light on your feet. I'll turn their momentum against them." : "Stay close. Nobody in this party gets left behind.";
+    return member.id === "chr_lira" ? `Three thoughts: ${game.pressure.name} is at ${game.pressure.value}, ${game.enemies.filter((enemy) => enemy.alive).length} threats remain, and I would prefer we survive both.` : member.id === "chr_rook" ? `I am here. That is not a metaphor. You may rely on me.` : member.id === "chr_kael" ? `We could discuss destiny, or we could keep moving. I vote for moving.` : `We've completed ${game.objectives.filter((objective) => objective.completed).length} of ${game.objectives.length}. One step at a time.`;
   }
 
   moveParty(input: { locationId: string }, opts: { actor: Actor }): { summary: string; proposal?: Proposal } {

@@ -61,6 +61,8 @@ For recording, `http://127.0.0.1:5173/?demo=1` skips the lore crawl and opens th
 
 Controls can be rebound from the in-game settings panel.
 
+Voice commands can address any recruited companion by name—for example, “Elias, guard me,” “Lira, use your ability,” or “Kael, focus.” Companions answer with character-specific dialogue and system voice profiles; bosses also speak unique lines when they awaken, change phase, and fall. Available voice quality depends on the natural/enhanced voices installed in the browser or operating system.
+
 ## Verify
 
 ```bash

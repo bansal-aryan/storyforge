@@ -30,6 +30,25 @@ const forestDecor = [
 ] as const;
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 const distanceBetween = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
+const voiceProfiles: Record<string, { pitch: number; rate: number; names: string[] }> = {
+  chr_elias: { pitch: .88, rate: .94, names: ["Daniel", "Aaron", "Alex", "Google UK English Male"] },
+  chr_lira: { pitch: 1.08, rate: .98, names: ["Samantha", "Ava", "Serena", "Google UK English Female"] },
+  chr_rook: { pitch: .62, rate: .78, names: ["Ralph", "Fred", "Reed", "Google US English"] },
+  chr_kael: { pitch: 1.16, rate: 1.08, names: ["Eddy", "Jamie", "Arthur", "Google UK English Male"] },
+  chr_sylvara: { pitch: .78, rate: .84, names: ["Moira", "Tessa", "Karen", "Google UK English Female"] },
+  chr_nihil: { pitch: .48, rate: .72, names: ["Albert", "Ralph", "Daniel"] },
+  chr_ferrox: { pitch: .56, rate: .82, names: ["Fred", "Reed", "Alex"] },
+  chr_tempest: { pitch: 1.28, rate: .9, names: ["Tessa", "Ava", "Moira"] },
+  chr_voss: { pitch: .7, rate: .88, names: ["Daniel", "Arthur", "Aaron"] },
+  narrator: { pitch: .96, rate: .94, names: ["Samantha", "Daniel", "Google UK English Female"] },
+};
+const bossLines: Record<string, { awaken: string; phases: [string, string]; defeat: string }> = {
+  chr_sylvara: { awaken: "You prune branches and call it courage. Come, little heir. Let the roots judge you.", phases: ["The forest remembers your family's failure.", "If I fall, the blight takes us both!"], defeat: "The roots... chose you." },
+  chr_nihil: { awaken: "Names are only cages. I will free you from yours.", phases: ["Was there an Elias? A Lira? You are already forgetting.", "No. I wrote the ending of this bloodline."], defeat: "Remember me... or I become nothing." },
+  chr_ferrox: { awaken: "Every chain in this forge was hammered for you.", phases: ["Your fellowship will melt before your eyes.", "I am the fire that outlives kings!"], defeat: "Rook... you were made to obey." },
+  chr_tempest: { awaken: "Climb high enough and even heroes learn to fall.", phases: ["The sky has no master!", "Then break with the mountain!"], defeat: "At last... the wind is mine again." },
+  chr_voss: { awaken: "Look at the little family you assembled from my ruins.", phases: ["I gave each of them purpose through suffering.", "You inherited nothing but their graves!"], defeat: "You were supposed... to remain afraid." },
+};
 
 function StoryCrawl({ onFinish }: { onFinish: () => void }) {
   return <div className="intro-screen" role="dialog" aria-label="The story of Eclipse Inheritance">
@@ -79,6 +98,7 @@ export default function App() {
   const [agentPanelOpen, setAgentPanelOpen] = useState(() => new URLSearchParams(window.location.search).has("demo"));
   const [voiceLog, setVoiceLog] = useState<string[]>(["Companion link ready. Recruit your ally to issue tactical commands."]);
   const [voiceInput, setVoiceInput] = useState("");
+  const [spokenLine, setSpokenLine] = useState<{ speaker: string; text: string } | null>(null);
   const [micEnabled, setMicEnabled] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [listeningFor, setListeningFor] = useState<ControlAction | null>(null);
@@ -95,6 +115,7 @@ export default function App() {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const previousHeroHp = useRef(game?.player.hp ?? 100);
   const previousEliasHp = useRef(game?.companion.hp ?? 100);
+  const previousBossState = useRef({ stage: game?.stage ?? 1, awakened: game?.boss.awakened ?? false, phase: game?.boss.phase ?? 1, defeated: game?.boss.defeated ?? false });
   const enemyHpRef = useRef<Record<string, number>>(Object.fromEntries(game?.enemies.map((enemy) => [enemy.id, enemy.hp]) ?? []));
 
   useEffect(() => { playerRef.current = player; }, [player]);
@@ -126,16 +147,34 @@ export default function App() {
     enemyHpRef.current = Object.fromEntries(game.enemies.map((enemy) => [enemy.id, enemy.hp]));
   }, [game]);
 
-  const speak = useCallback((text: string) => {
+  const speak = useCallback((text: string, speakerId = "narrator", speakerName?: string) => {
     if (!("speechSynthesis" in window)) return;
-    const utterance = new SpeechSynthesisUtterance(text); utterance.rate = 1; utterance.pitch = 1.08;
+    const profile = voiceProfiles[speakerId] ?? voiceProfiles.narrator!;
+    const utterance = new SpeechSynthesisUtterance(text);
+    const voices = window.speechSynthesis.getVoices();
+    utterance.voice = profile.names.map((name) => voices.find((voice) => voice.name.includes(name))).find(Boolean) ?? voices.find((voice) => voice.lang.startsWith("en") && /premium|enhanced|natural/i.test(voice.name)) ?? null;
+    utterance.rate = profile.rate; utterance.pitch = profile.pitch; utterance.volume = 1;
+    setSpokenLine({ speaker: speakerName ?? (speakerId.startsWith("chr_") ? speakerId.replace("chr_", "") : "Narrator"), text });
+    utterance.onend = () => window.setTimeout(() => setSpokenLine((current) => current?.text === text ? null : current), 900);
     window.speechSynthesis.cancel(); window.speechSynthesis.speak(utterance);
   }, []);
+
+  useEffect(() => {
+    if (!game) return;
+    const previous = previousBossState.current;
+    if (previous.stage !== game.stage) previousBossState.current = { stage: game.stage, awakened: false, phase: 1, defeated: false };
+    const prior = previousBossState.current;
+    const lines = bossLines[game.boss.id];
+    if (lines && game.boss.defeated && !prior.defeated) speak(lines.defeat, game.boss.id, game.boss.name);
+    else if (lines && game.boss.awakened && !prior.awakened) speak(lines.awaken, game.boss.id, game.boss.name);
+    else if (lines && game.boss.phase > prior.phase) speak(lines.phases[game.boss.phase - 2] ?? lines.phases[1], game.boss.id, game.boss.name);
+    previousBossState.current = { stage: game.stage, awakened: game.boss.awakened, phase: game.boss.phase, defeated: game.boss.defeated };
+  }, [game?.boss.awakened, game?.boss.defeated, game?.boss.phase, game?.stage, speak]);
 
   const handleInteraction = useCallback(() => {
     if (!game || game.stageComplete) return;
     const result = engine.stageOneInteract(playerRef.current);
-    if (result.type !== "none") speak(result.summary);
+    if (result.type !== "none") speak(result.summary, result.type === "recruitment_offer" ? game.companion.id : "narrator", result.type === "recruitment_offer" ? game.companion.name : undefined);
     if (result.type === "recruitment_offer") setVoiceLog((previous) => [`${game.companion.name} completed their trial and wants an honest answer.`, ...previous].slice(0, 4));
   }, [game, speak]);
 
@@ -211,12 +250,19 @@ export default function App() {
   const sendToElias = useCallback((message: string) => {
     if (!message.trim() || !game) return;
     const lowered = message.toLowerCase();
-    if (lowered.includes("hold")) engine.setCompanionMode("hold");
-    else if (lowered.includes("guard") || lowered.includes("protect")) engine.setCompanionMode("guard");
-    else if (lowered.includes("focus") || lowered.includes("attack")) engine.setCompanionMode("focus");
-    else if (lowered.includes("follow")) engine.setCompanionMode("follow");
-    const response = engine.getCompanionResponse(message);
-    setVoiceLog((previous) => [`You: ${message}`, `${game.companion.name}: ${response}`, ...previous].slice(0, 4)); speak(response); setVoiceInput("");
+    const fellowship = [...game.retinue, ...(game.companion.recruited ? [game.companion] : [])];
+    const target = fellowship.find((ally) => lowered.includes(ally.name.toLowerCase())) ?? (game.companion.recruited ? game.companion : fellowship[0]);
+    if (!target) { setVoiceLog((previous) => ["No recruited companion can answer yet.", ...previous].slice(0, 4)); return; }
+    let actionSummary = "";
+    try {
+      if (lowered.includes("ability") || lowered.includes("special") || lowered.includes(target.ability.name.toLowerCase())) actionSummary = engine.useCompanionAbility(target.id).summary;
+      else if (lowered.includes("hold")) actionSummary = engine.setFellowshipMemberTactic(target.id, "hold").summary;
+      else if (lowered.includes("guard") || lowered.includes("protect")) actionSummary = engine.setFellowshipMemberTactic(target.id, "guard").summary;
+      else if (lowered.includes("focus") || lowered.includes("attack")) actionSummary = engine.setFellowshipMemberTactic(target.id, "focus").summary;
+      else if (lowered.includes("follow")) actionSummary = engine.setFellowshipMemberTactic(target.id, "follow").summary;
+    } catch (error) { actionSummary = error instanceof Error ? error.message : "I can't do that yet."; }
+    const response = actionSummary || engine.getCompanionResponse(message, target.id);
+    setVoiceLog((previous) => [`You: ${message}`, `${target.name}: ${response}`, ...previous].slice(0, 4)); speak(response, target.id, target.name); setVoiceInput("");
   }, [game, speak]);
 
   const startVoiceChat = () => {
@@ -242,7 +288,7 @@ export default function App() {
     {confirmation && <div className="controls-backdrop" role="dialog" aria-modal="true" aria-label={confirmation.title}><section className="agent-confirmation"><small>WebMCP requests approval</small><h2>{confirmation.title}</h2><p>{confirmation.body}</p><div><button onClick={() => resolveConfirmation(false)}>Reject</button><button className="approve" onClick={() => resolveConfirmation(true)}>Approve</button></div></section></div>}
     {controlsOpen && <div className="controls-backdrop" role="dialog" aria-label="Edit game controls"><section className="controls-modal"><div className="controls-heading"><div><small>Settings</small><h2>Controls</h2></div><button onClick={() => { setControlsOpen(false); setListeningFor(null); }}>×</button></div><p>Select an action, then press any key to rebind it.</p><div className="control-list">{(Object.keys(controlLabels) as ControlAction[]).map((action) => <div className="control-row" key={action}><span>{controlLabels[action]}</span><button className={listeningFor === action ? "listening" : ""} onClick={() => setListeningFor(action)}>{listeningFor === action ? "Press a key…" : prettyKey(controls[action])}</button></div>)}</div><div className="controls-actions"><button onClick={() => { setControls(defaultControls); localStorage.setItem("storyforge:controls:v1", JSON.stringify(defaultControls)); }}>Restore defaults</button><button className="primary-action" onClick={() => setControlsOpen(false)}>Done</button></div></section></div>}
     {game.pendingBlessing && <div className="blessing-backdrop"><section className="blessing-modal"><small>{game.seal.name} resonates</small><h2>Choose a blessing</h2><p>Each restored objective returns a fragment of your inheritance.</p><div className="blessing-grid"><button disabled={game.blessings.includes("vigor")} onClick={() => engine.chooseBlessing("vigor")}><b>♥</b><strong>Vigor</strong><span>+20 maximum health</span></button><button disabled={game.blessings.includes("fury")} onClick={() => engine.chooseBlessing("fury")}><b>✦</b><strong>Fury</strong><span>Weapons deal +1 damage</span></button><button disabled={game.blessings.includes("wind")} onClick={() => engine.chooseBlessing("wind")}><b>◌</b><strong>Wind</strong><span>Move faster through the realm</span></button><button disabled={game.blessings.includes("bond")} onClick={() => engine.chooseBlessing("bond")}><b>➶</b><strong>Bond</strong><span>{game.companion.name} gains health and double damage</span></button></div></section></div>}
-    {game.recruitment.offerReady && <div className="blessing-backdrop"><section className="recruitment-modal"><small>Trust earned · {game.companion.role}</small><h2>{game.companion.name}</h2><p className="companion-personality">{game.companion.personality}</p><blockquote>{game.recruitment.prompt}</blockquote><div className="recruitment-choices">{game.recruitment.choices.map((choice, index) => <button key={choice} onClick={() => { const result = engine.resolveRecruitment(index as 0 | 1); speak(result.summary); }}><span>{index === 0 ? "Friendship" : "Alliance"}</span><strong>{choice}</strong></button>)}</div><p className="companion-stakes"><b>Fights for:</b> {game.companion.motivation}<br/><b>Fears:</b> {game.companion.fear}</p></section></div>}
+    {game.recruitment.offerReady && <div className="blessing-backdrop"><section className="recruitment-modal"><small>Trust earned · {game.companion.role}</small><h2>{game.companion.name}</h2><p className="companion-personality">{game.companion.personality}</p><blockquote>{game.recruitment.prompt}</blockquote><div className="recruitment-choices">{game.recruitment.choices.map((choice, index) => <button key={choice} onClick={() => { const result = engine.resolveRecruitment(index as 0 | 1); speak(result.summary, game.companion.id, game.companion.name); }}><span>{index === 0 ? "Friendship" : "Alliance"}</span><strong>{choice}</strong></button>)}</div><p className="companion-stakes"><b>Fights for:</b> {game.companion.motivation}<br/><b>Fears:</b> {game.companion.fear}</p></section></div>}
     <div className="minimal-shell" aria-hidden={showIntro}>
       <nav className="hud-nav" aria-label="Game status">
         <div className="hud-brand"><strong>Stage {game.stage}</strong><span>{game.biome.name}</span></div>
@@ -271,9 +317,10 @@ export default function App() {
         </div>
         <div className="world-message">{game.storyLine}</div>
         {game.banter.length > 0 && <div className="party-banter" aria-live="polite"><small>Fellowship</small>{game.banter.slice(0, 2).map((line, index) => <p key={`${line.speaker}-${index}`}><b>{line.speaker}</b> {line.line}</p>)}</div>}
-        <aside className="party-dock" aria-label="Fellowship abilities">{[...game.retinue, ...(game.companion.recruited ? [game.companion] : [])].map((ally) => { const cooling = ally.ability.readyAt > Date.now(); return <button key={ally.id} disabled={cooling || ally.hp <= 0} onClick={() => engine.useCompanionAbility(ally.id)} title={ally.ability.description}><span>{ally.name}</span><strong>{ally.ability.name}</strong><small>{ally.bond} · {ally.trust} trust{cooling ? " · recharging" : " · ready"}</small></button>; })}</aside>
+        <aside className="party-dock" aria-label="Fellowship abilities">{[...game.retinue, ...(game.companion.recruited ? [game.companion] : [])].map((ally) => { const cooling = ally.ability.readyAt > Date.now(); return <button key={ally.id} disabled={cooling || ally.hp <= 0} onClick={() => { const result = engine.useCompanionAbility(ally.id); speak(result.summary, ally.id, ally.name); }} title={ally.ability.description}><span>{ally.name} · {ally.tactic}</span><strong>{ally.ability.name}</strong><small>{ally.bond} · {ally.trust} trust{cooling ? " · recharging" : " · ready"}</small></button>; })}</aside>
         {agentPanelOpen && <aside className="agent-panel" aria-label="WebMCP agent activity"><header><div><small>Live collaboration</small><strong>WebMCP Agent</strong></div><span className={`agent-status ${webmcp}`}>{webmcp}</span></header><p className="agent-explainer">The agent reads canonical battle state and issues structured, logged commands. Story-changing proposals stay yours to approve.</p><div className="agent-tools"><code>inspect_battlefield</code><code>command_companion</code><code>explain_next_objective</code></div>{pendingProposals.length > 0 && <section><h3>Needs your decision</h3>{pendingProposals.map((proposal) => <article className="proposal-row" key={proposal.id}><div><small>{proposal.toolName}</small><p>{proposal.summary}</p></div><div><button onClick={() => engine.rejectProposal(proposal.id)}>Reject</button><button className="approve" onClick={() => engine.applyProposal(proposal.id)}>Accept</button></div></article>)}</section>}<section><h3>Agent activity</h3>{agentActivity.length ? agentActivity.map((entry) => <article className="activity-row" key={entry.id}><code>{entry.toolName ?? "agent"}</code><span>{entry.summary}</span></article>) : <p className="agent-empty">Waiting for the first WebMCP tool call. Ask the agent to inspect the battlefield.</p>}</section></aside>}
-        <div className="companion-command" title={voiceLog[0]}><div className="stance-buttons">{(["follow", "focus", "guard", "hold"] as const).map((mode) => <button key={mode} disabled={!game.companion.recruited} className={game.companion.mode === mode ? "active" : ""} onClick={() => engine.setCompanionMode(mode)}>{mode}</button>)}</div><input value={voiceInput} disabled={!game.companion.recruited} onChange={(event) => setVoiceInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") sendToElias(voiceInput); }} placeholder={game.companion.recruited ? `Command ${game.companion.name}…` : `Recruit ${game.companion.name} to issue commands`} /><button disabled={!game.companion.recruited} onClick={startVoiceChat}>{micEnabled ? "Listening" : "Voice"}</button></div>
+        {spokenLine && <div className="spoken-caption"><b>{spokenLine.speaker}</b><span>{spokenLine.text}</span></div>}
+        <div className="companion-command" title={voiceLog[0]}><input value={voiceInput} disabled={game.retinue.length === 0 && !game.companion.recruited} onChange={(event) => setVoiceInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") sendToElias(voiceInput); }} placeholder={game.retinue.length || game.companion.recruited ? "Say a name and command: ‘Elias, guard me’" : `Recruit ${game.companion.name} to issue commands`} /><button disabled={game.retinue.length === 0 && !game.companion.recruited} onClick={startVoiceChat}>{micEnabled ? "Listening…" : "Talk"}</button></div>
         <div className="hotbar" aria-label="Inventory hotbar">{game.inventory.map((item, index) => <button key={item.id} className={`hotbar-slot ${item.id === game.player.weaponId ? "equipped" : ""} ${item.kind}`} title={item.description} onClick={() => { if (item.kind === "weapon") engine.equipWeapon(item.id); }}><kbd>{index + 1}</kbd><span>{item.icon}</span><small>{item.name}</small></button>)}{Array.from({ length: Math.max(0, 5 - game.inventory.length) }, (_, index) => <div className="hotbar-slot empty" key={`empty-${index}`}><kbd>{game.inventory.length + index + 1}</kbd></div>)}</div>
         {game.campaignComplete && <div className="stage-complete-card ending-card"><small>The eclipse is broken</small><strong>Dawn Inherited</strong><p>Five Seals unite. The companions survive, Voss falls, and light returns to the five realms.</p></div>}
       </main>

@@ -217,6 +217,19 @@ describe("WorldEngine", () => {
     expect(() => engine.useCompanionAbility("chr_elias", 1001)).toThrow(/recharging/i);
   });
 
+  it("accepts name-aware fellowship tactics and preserves character voice", () => {
+    const engine = new WorldEngine(createEclipseInheritance());
+    const game = engine.snapshot().gameplay!;
+    engine.stageOneInteract(game.objectives[0]!);
+    const enemy = game.enemies[0]!;
+    for (let hit = 0; hit < enemy.maxHp; hit += 1) engine.stageOneAttack(enemy);
+    engine.stageOneInteract(game.companion);
+    engine.resolveRecruitment(0);
+    engine.setFellowshipMemberTactic("chr_elias", "guard");
+    expect(engine.snapshot().gameplay?.companion.mode).toBe("guard");
+    expect(engine.getCompanionResponse("How are you?", "chr_elias")).toContain("trust");
+  });
+
   it("collects and equips a level weapon in the canonical hotbar inventory", () => {
     const engine = new WorldEngine(createEclipseInheritance());
     const pickup = engine.snapshot().gameplay!.weaponPickups[0]!;
