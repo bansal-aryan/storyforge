@@ -61,7 +61,9 @@ For recording, `http://127.0.0.1:5173/?demo=1` skips the lore crawl and opens th
 
 Controls can be rebound from the in-game settings panel.
 
-Voice commands can address any recruited companion by name—for example, “Elias, guard me,” “Lira, use your ability,” or “Kael, focus.” Companions answer with character-specific dialogue and system voice profiles; bosses also speak unique lines when they awaken, change phase, and fall. Available voice quality depends on the natural/enhanced voices installed in the browser or operating system.
+Voice and typed commands can address any recruited companion by name—for example, “Elias, cover me,” “Lira, use your ability,” “everyone regroup,” or “Kael, what should we do?” Typed messages have a dedicated Send button and also submit with Enter. Microphone status and browser/permission errors are shown beneath the input instead of failing silently. Companions can discuss health, objectives, hazards, bosses, abilities, memories, and personal concerns. Available voice quality and speech recognition support depend on the browser and operating system; microphone input requires HTTPS and browser permission.
+
+The fellowship recommendation engine continuously evaluates party health, individual cooldowns, realm pressure, incoming telegraphs, remaining quest gates, and boss phases. It surfaces an explainable recommendation with a one-click **Do it** action and voices urgent warnings proactively. Commands such as “heal the party,” “someone interrupt that attack,” “mark the strongest enemy,” “what is our best move?” and “do it” infer the appropriate available companion and grounded engine action.
 
 ## Verify
 

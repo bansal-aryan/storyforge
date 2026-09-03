@@ -572,6 +572,34 @@ export class WorldEngine {
     return { objective: game.objective, recommendedAction: "Defeat the remaining guardians.", reason: `${game.enemies.filter((enemy) => enemy.alive).length} guardians still anchor ${game.boss.name}'s shield.` };
   }
 
+  getFellowshipRecommendation(): { memberId: string; memberName: string; action: "ability" | "guard" | "focus" | "follow"; headline: string; reason: string; urgency: "low" | "medium" | "high" } | null {
+    const game = this.requireStageOne();
+    const members = [...game.retinue, ...(game.companion.recruited ? [game.companion] : [])].filter((member) => member.hp > 0);
+    if (!members.length) return null;
+    const ready = (abilityId: string) => members.find((member) => member.ability.id === abilityId && member.ability.readyAt <= Date.now());
+    const rook = ready("bulwark");
+    if (rook && (game.player.hp / game.player.maxHp < .48 || members.some((member) => member.hp / member.maxHp < .35))) return { memberId: rook.id, memberName: rook.name, action: "ability", headline: "Raise the Living Bulwark", reason: "The fellowship is badly wounded; Rook can heal the party and recover downed allies.", urgency: "high" };
+    const kael = ready("gust");
+    if (kael && (game.boss.intent === "strike" || game.boss.intent === "summon" || game.enemies.filter((enemy) => enemy.intent === "windup").length >= 2)) return { memberId: kael.id, memberName: kael.name, action: "ability", headline: "Break the incoming assault", reason: "Multiple attacks are telegraphed; Tempest Break can interrupt them before they land.", urgency: "high" };
+    const lira = ready("clarity");
+    if (lira && (game.pressure.value >= 55 || game.player.essence <= 30)) return { memberId: lira.id, memberName: lira.name, action: "ability", headline: "Stabilize the fellowship", reason: `${game.pressure.name} or low Essence threatens the next encounter; Mnemonic Ward relieves both.`, urgency: "high" };
+    const elias = ready("mark");
+    if (elias && (game.boss.awakened || game.enemies.some((enemy) => enemy.alive))) return { memberId: elias.id, memberName: elias.name, action: "ability", headline: game.boss.awakened ? `Mark ${game.boss.name}` : "Mark the strongest guardian", reason: "Hunter's Mark creates immediate focused damage on the highest-value target.", urgency: "medium" };
+    if (game.boss.awakened) {
+      const striker = members.find((member) => member.tactic !== "focus") ?? members[0]!;
+      return { memberId: striker.id, memberName: striker.name, action: "focus", headline: `Focus fire on ${game.boss.name}`, reason: `The boss is exposed in phase ${game.boss.phase}; concentrated pressure shortens the dangerous phase.`, urgency: "medium" };
+    }
+    const guardian = members.find((member) => member.tactic !== "guard") ?? members[0]!;
+    return { memberId: guardian.id, memberName: guardian.name, action: "guard", headline: "Cover the next objective", reason: this.getNextObjectiveGuidance().reason, urgency: "low" };
+  }
+
+  applyFellowshipRecommendation(): { summary: string } {
+    const recommendation = this.getFellowshipRecommendation();
+    if (!recommendation) throw new Error("Recruit a companion before requesting a fellowship plan.");
+    if (recommendation.action === "ability") return this.useCompanionAbility(recommendation.memberId);
+    return this.setFellowshipMemberTactic(recommendation.memberId, recommendation.action);
+  }
+
   combatTick(input: { player: { x: number; y: number }; companion: { x: number; y: number }; dodging: boolean; now: number }): void {
     const world = this.require();
     const game = this.requireStageOne();
@@ -729,6 +757,12 @@ export class WorldEngine {
     if (game.boss.defeated && !game.sealCollected) return `${game.seal.name} lies where ${game.boss.name} fell. Let's finish this together.`;
     if (game.portalActive) return member.id === "chr_kael" ? "Another impossible road? Good. I was getting bored." : "The Portal is stable. Cross when you are ready; I'm with you.";
     if (lowered.includes("how are you") || lowered.includes("okay")) return `${member.fear} still weighs on me—but I trust this fellowship. Trust stands at ${member.trust}.`;
+    if (lowered.includes("ability") || lowered.includes("power") || lowered.includes("what can you do")) return `${member.ability.name}: ${member.ability.description} It is ${member.ability.readyAt <= Date.now() ? "ready now" : "still recharging"}.`;
+    if (lowered.includes("health") || lowered.includes("hurt") || lowered.includes("status")) return `I have ${member.hp} of ${member.maxHp} health. You have ${game.player.hp} of ${game.player.maxHp}, and ${game.enemies.filter((enemy) => enemy.alive).length} threats remain.`;
+    if (lowered.includes("pressure") || lowered.includes("blight") || lowered.includes("amnesia") || lowered.includes("heat") || lowered.includes("exposure") || lowered.includes("corruption")) return `${game.pressure.name} is ${game.pressure.value} of ${game.pressure.max}. ${game.pressure.description}`;
+    if (lowered.includes("boss") || lowered.includes(game.boss.name.toLowerCase())) return game.boss.awakened ? `${game.boss.name} is exposed in phase ${game.boss.phase}, with ${game.boss.hp} strength remaining.` : `${game.boss.name}'s shield remains tied to ${game.objectives.filter((objective) => !objective.completed).length} objectives and ${game.enemies.filter((enemy) => enemy.alive).length} guardians.`;
+    if (lowered.includes("objective") || lowered.includes("what now") || lowered.includes("what should") || lowered.includes("where next") || lowered.includes("help me")) return this.getNextObjectiveGuidance().recommendedAction;
+    if (lowered.includes("remember") || lowered.includes("memory") || lowered.includes("promise")) return member.memories.length ? `I remember this: ${member.memories[member.memories.length - 1]}` : "We are still writing our first memory together.";
     if (lowered.includes("scout") || lowered.includes("ahead")) return member.id === "chr_lira" ? `I can read the path. ${game.objectives.filter((objective) => !objective.completed).length} bindings remain.` : `The next objective is marked. I'll watch our flank.`;
     if (lowered.includes("attack") || lowered.includes("strike")) return member.id === "chr_rook" ? "Threat identified. I will make an opening, friend." : `Understood. ${game.boss.name} won't get a quiet moment.`;
     if (lowered.includes("protect") || lowered.includes("guard")) return member.id === "chr_kael" ? "Stay light on your feet. I'll turn their momentum against them." : "Stay close. Nobody in this party gets left behind.";

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { engine } from "./engine/instance";
 import { useWorldStore } from "./store/useWorldStore";
+import { parsePartyCommand } from "./voice/commandParser";
 
 type Point = { x: number; y: number };
-type SpeechRecognitionLike = { continuous: boolean; interimResults: boolean; lang: string; onresult: ((event: any) => void) | null; onend: (() => void) | null; start: () => void; stop: () => void };
+type SpeechRecognitionLike = { continuous: boolean; interimResults: boolean; lang: string; onresult: ((event: any) => void) | null; onerror: ((event: any) => void) | null; onstart: (() => void) | null; onend: (() => void) | null; start: () => void; stop: () => void; abort?: () => void };
 
 const WORLD = { width: 2200, height: 1300 };
 const PLAYER_SIZE = 16;
@@ -100,6 +101,7 @@ export default function App() {
   const [voiceInput, setVoiceInput] = useState("");
   const [spokenLine, setSpokenLine] = useState<{ speaker: string; text: string } | null>(null);
   const [micEnabled, setMicEnabled] = useState(false);
+  const [commandStatus, setCommandStatus] = useState("Type a message or tap Mic to speak.");
   const [controlsOpen, setControlsOpen] = useState(false);
   const [listeningFor, setListeningFor] = useState<ControlAction | null>(null);
   const [controls, setControls] = useState<Controls>(() => {
@@ -116,6 +118,7 @@ export default function App() {
   const previousHeroHp = useRef(game?.player.hp ?? 100);
   const previousEliasHp = useRef(game?.companion.hp ?? 100);
   const previousBossState = useRef({ stage: game?.stage ?? 1, awakened: game?.boss.awakened ?? false, phase: game?.boss.phase ?? 1, defeated: game?.boss.defeated ?? false });
+  const lastRecommendationRef = useRef("");
   const enemyHpRef = useRef<Record<string, number>>(Object.fromEntries(game?.enemies.map((enemy) => [enemy.id, enemy.hp]) ?? []));
 
   useEffect(() => { playerRef.current = player; }, [player]);
@@ -170,6 +173,18 @@ export default function App() {
     else if (lines && game.boss.phase > prior.phase) speak(lines.phases[game.boss.phase - 2] ?? lines.phases[1], game.boss.id, game.boss.name);
     previousBossState.current = { stage: game.stage, awakened: game.boss.awakened, phase: game.boss.phase, defeated: game.boss.defeated };
   }, [game?.boss.awakened, game?.boss.defeated, game?.boss.phase, game?.stage, speak]);
+
+  useEffect(() => {
+    if (!game) return;
+    const recommendation = engine.getFellowshipRecommendation();
+    if (!recommendation || recommendation.urgency !== "high") return;
+    const signature = `${game.stage}:${recommendation.memberId}:${recommendation.headline}`;
+    if (lastRecommendationRef.current === signature) return;
+    lastRecommendationRef.current = signature;
+    const line = `${recommendation.headline}. ${recommendation.reason}`;
+    setCommandStatus(`${recommendation.memberName} recommends: ${line}`);
+    speak(line, recommendation.memberId, recommendation.memberName);
+  }, [game?.boss.intent, game?.companion.hp, game?.player.essence, game?.player.hp, game?.pressure.value, game?.retinue, game?.stage, speak]);
 
   const handleInteraction = useCallback(() => {
     if (!game || game.stageComplete) return;
@@ -248,30 +263,49 @@ export default function App() {
   }, [controls, controlsOpen, game, keys, showIntro]);
 
   const sendToElias = useCallback((message: string) => {
-    if (!message.trim() || !game) return;
-    const lowered = message.toLowerCase();
+    if (!message.trim() || !game) { setCommandStatus("Enter a command or question first."); return; }
     const fellowship = [...game.retinue, ...(game.companion.recruited ? [game.companion] : [])];
-    const target = fellowship.find((ally) => lowered.includes(ally.name.toLowerCase())) ?? (game.companion.recruited ? game.companion : fellowship[0]);
-    if (!target) { setVoiceLog((previous) => ["No recruited companion can answer yet.", ...previous].slice(0, 4)); return; }
-    let actionSummary = "";
+    const parsed = parsePartyCommand(message, [...fellowship.map((ally) => ally.name), game.companion.name]);
+    if (parsed.targetName === game.companion.name && !game.companion.recruited) {
+      const response = `${game.companion.name} has not joined yet. Complete their trial: ${game.recruitment.description}`;
+      setCommandStatus(response); setVoiceLog((previous) => [response, ...previous].slice(0, 4)); setVoiceInput(""); return;
+    }
+    const inferredAbilityTarget = parsed.action === "ability" && !parsed.targetName
+      ? fellowship.find((ally) => /heal|revive|shield|bulwark/i.test(message) && ally.ability.id === "bulwark")
+        ?? fellowship.find((ally) => /pressure|essence|memory|amnesia|stabilize|restore/i.test(message) && ally.ability.id === "clarity")
+        ?? fellowship.find((ally) => /interrupt|wind|storm|group|everyone/i.test(message) && ally.ability.id === "gust")
+        ?? fellowship.find((ally) => /mark|snipe|strongest|priority/i.test(message) && ally.ability.id === "mark")
+      : undefined;
+    const targets = parsed.everyone ? fellowship : [fellowship.find((ally) => ally.name === parsed.targetName) ?? inferredAbilityTarget ?? (game.companion.recruited ? game.companion : fellowship[0])].filter(Boolean);
+    if (!targets.length) { const response = "No recruited companion can answer yet."; setCommandStatus(response); setVoiceLog((previous) => [response, ...previous].slice(0, 4)); return; }
+    let actionSummary = ""; const target = targets[0]!;
     try {
-      if (lowered.includes("ability") || lowered.includes("special") || lowered.includes(target.ability.name.toLowerCase())) actionSummary = engine.useCompanionAbility(target.id).summary;
-      else if (lowered.includes("hold")) actionSummary = engine.setFellowshipMemberTactic(target.id, "hold").summary;
-      else if (lowered.includes("guard") || lowered.includes("protect")) actionSummary = engine.setFellowshipMemberTactic(target.id, "guard").summary;
-      else if (lowered.includes("focus") || lowered.includes("attack")) actionSummary = engine.setFellowshipMemberTactic(target.id, "focus").summary;
-      else if (lowered.includes("follow")) actionSummary = engine.setFellowshipMemberTactic(target.id, "follow").summary;
+      if (/\b(do it|execute|your recommendation|that plan)\b/i.test(message)) actionSummary = engine.applyFellowshipRecommendation().summary;
+      else if (/\b(recommend|suggest|plan|what should|best move|advice)\b/i.test(message)) {
+        const recommendation = engine.getFellowshipRecommendation();
+        actionSummary = recommendation ? `${recommendation.memberName} recommends: ${recommendation.headline}. ${recommendation.reason}` : "Recruit a companion and I can build a fellowship plan.";
+      } else if (parsed.action === "ability") actionSummary = targets.map((ally) => engine.useCompanionAbility(ally!.id).summary).join(" ");
+      else if (parsed.action === "guard" || parsed.action === "focus" || parsed.action === "hold" || parsed.action === "follow") {
+        const tactic: "guard" | "focus" | "hold" | "follow" = parsed.action;
+        actionSummary = targets.map((ally) => engine.setFellowshipMemberTactic(ally!.id, tactic).summary).join(" ");
+      }
     } catch (error) { actionSummary = error instanceof Error ? error.message : "I can't do that yet."; }
     const response = actionSummary || engine.getCompanionResponse(message, target.id);
-    setVoiceLog((previous) => [`You: ${message}`, `${target.name}: ${response}`, ...previous].slice(0, 4)); speak(response, target.id, target.name); setVoiceInput("");
+    setCommandStatus(`${target.name}: ${response}`); setVoiceLog((previous) => [`You: ${message}`, `${target.name}: ${response}`, ...previous].slice(0, 4)); speak(response, target.id, target.name); setVoiceInput("");
   }, [game, speak]);
 
   const startVoiceChat = () => {
+    if (micEnabled) { recognitionRef.current?.stop(); setCommandStatus("Finishing transcript…"); return; }
     const Recognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!Recognition) { setVoiceLog((previous) => ["Speech recognition is unavailable here. The text command remains active.", ...previous].slice(0, 4)); return; }
+    if (!window.isSecureContext) { setCommandStatus("Microphone input requires HTTPS. Typed commands still work."); return; }
+    if (!Recognition) { const status = "This browser does not provide speech recognition. Use the Send button or try Chrome/Safari."; setCommandStatus(status); setVoiceLog((previous) => [status, ...previous].slice(0, 4)); return; }
     const recognition = new Recognition() as SpeechRecognitionLike;
     recognition.lang = "en-US"; recognition.continuous = false; recognition.interimResults = false;
-    recognition.onresult = (event: any) => sendToElias(event.results[0][0].transcript.trim()); recognition.onend = () => setMicEnabled(false);
-    recognition.start(); recognitionRef.current = recognition; setMicEnabled(true);
+    recognition.onstart = () => { setMicEnabled(true); setCommandStatus("Listening… say a companion's name and what you need."); };
+    recognition.onresult = (event: any) => { const transcript = event.results?.[0]?.[0]?.transcript?.trim(); if (transcript) { setVoiceInput(transcript); setCommandStatus(`Heard: “${transcript}”`); sendToElias(transcript); } else setCommandStatus("I couldn't hear a command. Please try again."); };
+    recognition.onerror = (event: any) => { const messages: Record<string, string> = { "not-allowed": "Microphone access was denied. Allow microphone access in browser settings, or use Send.", "audio-capture": "No microphone was detected.", "no-speech": "No speech was detected. Tap Mic and speak after Listening appears.", network: "Speech recognition could not reach the browser service. Typed commands still work." }; setCommandStatus(messages[event.error] ?? `Voice input failed (${event.error ?? "unknown error"}). Typed commands still work.`); setMicEnabled(false); };
+    recognition.onend = () => setMicEnabled(false);
+    try { recognitionRef.current = recognition; recognition.start(); } catch (error) { setMicEnabled(false); setCommandStatus(error instanceof Error ? `Could not start the microphone: ${error.message}` : "Could not start the microphone."); }
   };
 
   const closeIntro = () => { sessionStorage.setItem("storyforge:intro-seen:v1", "yes"); setShowIntro(false); };
@@ -281,6 +315,7 @@ export default function App() {
   const companionGlyph = game.companion.role.includes("Mage") ? "✧" : game.companion.role.includes("Golem") ? "◆" : game.companion.role.includes("Monk") ? "⌁" : "➶";
   const pendingProposals = snapshot.proposals.filter((proposal) => proposal.status === "pending").slice(0, 3);
   const agentActivity = snapshot.activity.filter((entry) => entry.actor === "agent").slice(0, 5);
+  const fellowshipRecommendation = engine.getFellowshipRecommendation();
   const camera = { x: clamp(viewport.width / 2 - player.x, viewport.width - WORLD.width, 0), y: clamp(viewport.height / 2 - player.y, viewport.height - WORLD.height, 0) };
 
   return <div className="game-root clean-game">
@@ -320,7 +355,8 @@ export default function App() {
         <aside className="party-dock" aria-label="Fellowship abilities">{[...game.retinue, ...(game.companion.recruited ? [game.companion] : [])].map((ally) => { const cooling = ally.ability.readyAt > Date.now(); return <button key={ally.id} disabled={cooling || ally.hp <= 0} onClick={() => { const result = engine.useCompanionAbility(ally.id); speak(result.summary, ally.id, ally.name); }} title={ally.ability.description}><span>{ally.name} · {ally.tactic}</span><strong>{ally.ability.name}</strong><small>{ally.bond} · {ally.trust} trust{cooling ? " · recharging" : " · ready"}</small></button>; })}</aside>
         {agentPanelOpen && <aside className="agent-panel" aria-label="WebMCP agent activity"><header><div><small>Live collaboration</small><strong>WebMCP Agent</strong></div><span className={`agent-status ${webmcp}`}>{webmcp}</span></header><p className="agent-explainer">The agent reads canonical battle state and issues structured, logged commands. Story-changing proposals stay yours to approve.</p><div className="agent-tools"><code>inspect_battlefield</code><code>command_companion</code><code>explain_next_objective</code></div>{pendingProposals.length > 0 && <section><h3>Needs your decision</h3>{pendingProposals.map((proposal) => <article className="proposal-row" key={proposal.id}><div><small>{proposal.toolName}</small><p>{proposal.summary}</p></div><div><button onClick={() => engine.rejectProposal(proposal.id)}>Reject</button><button className="approve" onClick={() => engine.applyProposal(proposal.id)}>Accept</button></div></article>)}</section>}<section><h3>Agent activity</h3>{agentActivity.length ? agentActivity.map((entry) => <article className="activity-row" key={entry.id}><code>{entry.toolName ?? "agent"}</code><span>{entry.summary}</span></article>) : <p className="agent-empty">Waiting for the first WebMCP tool call. Ask the agent to inspect the battlefield.</p>}</section></aside>}
         {spokenLine && <div className="spoken-caption"><b>{spokenLine.speaker}</b><span>{spokenLine.text}</span></div>}
-        <div className="companion-command" title={voiceLog[0]}><input value={voiceInput} disabled={game.retinue.length === 0 && !game.companion.recruited} onChange={(event) => setVoiceInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") sendToElias(voiceInput); }} placeholder={game.retinue.length || game.companion.recruited ? "Say a name and command: ‘Elias, guard me’" : `Recruit ${game.companion.name} to issue commands`} /><button disabled={game.retinue.length === 0 && !game.companion.recruited} onClick={startVoiceChat}>{micEnabled ? "Listening…" : "Talk"}</button></div>
+        {fellowshipRecommendation && <div className={`party-recommendation ${fellowshipRecommendation.urgency}`}><div><small>{fellowshipRecommendation.memberName} suggests</small><strong>{fellowshipRecommendation.headline}</strong><span>{fellowshipRecommendation.reason}</span></div><button onClick={() => { const result = engine.applyFellowshipRecommendation(); speak(result.summary, fellowshipRecommendation.memberId, fellowshipRecommendation.memberName); setCommandStatus(result.summary); }}>Do it</button></div>}
+        <div className="companion-command" title={voiceLog[0]}><div className="command-input-row"><input value={voiceInput} onChange={(event) => setVoiceInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); sendToElias(voiceInput); } }} placeholder={game.retinue.length || game.companion.recruited ? "Elias, guard me…" : `Ask about ${game.companion.name}'s trial…`} aria-label="Message the fellowship" /><button className="send-command" onClick={() => sendToElias(voiceInput)}>Send</button><button className={`mic-command ${micEnabled ? "listening" : ""}`} onClick={startVoiceChat}>{micEnabled ? "Stop" : "Mic"}</button></div><p className="command-status" aria-live="polite">{commandStatus}</p></div>
         <div className="hotbar" aria-label="Inventory hotbar">{game.inventory.map((item, index) => <button key={item.id} className={`hotbar-slot ${item.id === game.player.weaponId ? "equipped" : ""} ${item.kind}`} title={item.description} onClick={() => { if (item.kind === "weapon") engine.equipWeapon(item.id); }}><kbd>{index + 1}</kbd><span>{item.icon}</span><small>{item.name}</small></button>)}{Array.from({ length: Math.max(0, 5 - game.inventory.length) }, (_, index) => <div className="hotbar-slot empty" key={`empty-${index}`}><kbd>{game.inventory.length + index + 1}</kbd></div>)}</div>
         {game.campaignComplete && <div className="stage-complete-card ending-card"><small>The eclipse is broken</small><strong>Dawn Inherited</strong><p>Five Seals unite. The companions survive, Voss falls, and light returns to the five realms.</p></div>}
       </main>

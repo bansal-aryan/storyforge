@@ -230,6 +230,21 @@ describe("WorldEngine", () => {
     expect(engine.getCompanionResponse("How are you?", "chr_elias")).toContain("trust");
   });
 
+  it("infers and executes a grounded fellowship recommendation", () => {
+    const engine = new WorldEngine(createEclipseInheritance());
+    const game = engine.snapshot().gameplay!;
+    engine.stageOneInteract(game.objectives[0]!);
+    const firstEnemy = game.enemies[0]!;
+    for (let hit = 0; hit < firstEnemy.maxHp; hit += 1) engine.stageOneAttack(firstEnemy);
+    engine.stageOneInteract(game.companion);
+    engine.resolveRecruitment(0);
+    const recommendation = engine.getFellowshipRecommendation();
+    expect(recommendation).toMatchObject({ memberId: "chr_elias", action: "ability" });
+    const healthBefore = engine.snapshot().gameplay!.enemies.reduce((total, enemy) => total + enemy.hp, 0);
+    engine.applyFellowshipRecommendation();
+    expect(engine.snapshot().gameplay!.enemies.reduce((total, enemy) => total + enemy.hp, 0)).toBeLessThan(healthBefore);
+  });
+
   it("collects and equips a level weapon in the canonical hotbar inventory", () => {
     const engine = new WorldEngine(createEclipseInheritance());
     const pickup = engine.snapshot().gameplay!.weaponPickups[0]!;

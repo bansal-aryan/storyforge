@@ -787,8 +787,11 @@ button.hotbar-slot:hover { border-color: #9c8e55; background: #1d2924; }
 .party-dock{left:16px;bottom:18px;flex-direction:column;align-items:stretch;max-width:170px;max-height:260px;overflow:auto}
 .party-dock button{min-width:154px}
 .hotbar{bottom:18px}
-.companion-command{right:16px;bottom:18px;width:min(430px,32vw)}
-.party-banter{right:16px;bottom:78px;width:min(390px,32vw)}
+.companion-command{right:16px;bottom:18px;display:grid;width:min(480px,35vw);padding:7px}
+.command-input-row{display:flex;gap:5px}.command-input-row input{min-width:0;flex:1}.companion-command .send-command{background:#2678c7}.companion-command .mic-command{background:#54635d}.companion-command .mic-command.listening{background:#b44343;box-shadow:0 0 0 4px rgba(180,67,67,.15)}
+.command-status{overflow:hidden;margin:3px 7px 1px;color:#68766f;font-size:9px;line-height:1.3;white-space:nowrap;text-overflow:ellipsis}
+.party-recommendation{position:absolute;z-index:21;right:16px;bottom:94px;display:flex;align-items:center;gap:10px;width:min(480px,35vw);padding:10px 11px;border:1px solid rgba(255,255,255,.58);border-radius:13px;background:rgba(246,249,247,.9);color:#263630;box-shadow:0 12px 30px rgba(12,36,28,.17);backdrop-filter:blur(18px)}.party-recommendation>div{display:grid;min-width:0;flex:1}.party-recommendation small{color:#648174;font-size:8px;letter-spacing:.09em;text-transform:uppercase}.party-recommendation strong{font-size:11px}.party-recommendation span{overflow:hidden;color:#6b7873;font-size:9px;white-space:nowrap;text-overflow:ellipsis}.party-recommendation button{padding:7px 10px;border:0;border-radius:8px;background:#287c5d;color:#fff;font-size:10px}.party-recommendation.high{border-color:rgba(205,88,70,.45)}.party-recommendation.high button{background:#b74b3e}
+.party-banter{right:16px;bottom:164px;width:min(390px,32vw)}
 .recruitment-hint{top:45px;width:180px;max-width:none;padding:6px 9px;line-height:1.35}
 .spoken-caption{position:absolute;z-index:24;left:50%;bottom:100px;display:grid;width:min(560px,50vw);transform:translateX(-50%);padding:10px 14px;border:1px solid rgba(255,255,255,.48);border-radius:13px;background:rgba(17,26,34,.87);color:#f5f7f7;text-align:center;box-shadow:0 12px 32px rgba(0,0,0,.28);backdrop-filter:blur(18px)}
 .spoken-caption b{color:#efcf7b;font-size:9px;letter-spacing:.12em;text-transform:uppercase}.spoken-caption span{margin-top:3px;font:italic 13px/1.4 Georgia,serif}
@@ -797,8 +800,8 @@ button.hotbar-slot:hover { border-color: #9c8e55; background: #1d2924; }
 .theme-peaks .boundary-north{background:radial-gradient(ellipse at 50% 10%,#e9f3f5 0 25px,#809dad 27px 43px,transparent 44px) 0 0/118px 88px repeat-x,linear-gradient(#637f94,transparent)}
 .theme-citadel .boundary-north{background:repeating-linear-gradient(90deg,#17131f 0 86px,#6f5360 87px 91px),linear-gradient(#08070b,transparent)}
 
-@media(max-width:1100px){.party-banter{display:none}.companion-command{width:300px}.world-message{max-width:55vw}.party-dock{max-height:160px}.party-dock button{min-width:130px}.party-dock button small{display:none}}
-@media(max-width:760px){.party-dock{display:none}.companion-command{right:8px;bottom:88px;width:calc(100vw - 16px)}.hotbar{bottom:14px;max-width:calc(100vw - 16px);overflow:auto}.world-message{top:84px;max-width:calc(100vw - 24px)}.spoken-caption{bottom:138px;width:calc(100vw - 32px)}}
+@media(max-width:1100px){.party-banter{display:none}.companion-command{width:340px}.party-recommendation{width:340px}.world-message{max-width:55vw}.party-dock{max-height:160px}.party-dock button{min-width:130px}.party-dock button small{display:none}}
+@media(max-width:760px){.party-dock{display:none}.companion-command{right:8px;bottom:88px;width:calc(100vw - 16px)}.party-recommendation{right:8px;bottom:158px;width:calc(100vw - 16px)}.hotbar{bottom:14px;max-width:calc(100vw - 16px);overflow:auto}.world-message{top:84px;max-width:calc(100vw - 24px)}.spoken-caption{bottom:220px;width:calc(100vw - 32px)}}
 
 /* Judge-visible WebMCP collaboration */
 .agent-panel { position: absolute; z-index: 30; right: 18px; top: 18px; width: min(390px, calc(100vw - 36px)); max-height: calc(100% - 144px); overflow: auto; padding: 16px; border: 1px solid rgba(255,255,255,.66); border-radius: 18px; background: rgba(246,249,247,.88); color: #23312c; box-shadow: 0 18px 55px rgba(14,39,31,.2); backdrop-filter: blur(24px) saturate(150%); }
