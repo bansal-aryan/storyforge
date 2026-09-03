@@ -29,6 +29,8 @@ async function bootstrap() {
     && Array.isArray(stored.gameplay.companion?.memories)
     && Array.isArray(stored.gameplay.relationships)
     && Array.isArray(stored.gameplay.combos)
+    && Array.isArray(stored.gameplay.initiatives)
+    && stored.gameplay.objectives.every((objective) => typeof objective.primed === "boolean")
     && typeof stored.gameplay.autonomy === "string";
   if (currentSave && stored) {
     engine.load(stored);

@@ -229,6 +229,22 @@ button:disabled, input:disabled { cursor: not-allowed; opacity: 0.48; }
   box-shadow: 0 0 22px rgba(103, 212, 165, 0.8);
 }
 
+.totem.primed {
+  background: radial-gradient(circle at center, #fff8cf 0%, #d9b95e 36%, #554219 100%);
+  box-shadow: 0 0 0 5px rgba(225, 191, 91, .18), 0 0 26px rgba(244, 205, 89, .78);
+}
+
+.stage-objective small em {
+  display: block;
+  margin-top: 3px;
+  color: #efd986;
+  font-size: 9px;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.away-unit { opacity: 0; pointer-events: none; }
+
 .portal {
   position: absolute;
   width: 72px;

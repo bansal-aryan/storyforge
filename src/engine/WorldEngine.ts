@@ -309,6 +309,15 @@ export class WorldEngine {
           game.storyLine = `${summary} ${game.pressure.name} rises to ${game.pressure.value}/${game.pressure.max}.`;
           return;
         }
+        if (objective.requiredAbility && !objective.primed) {
+          const specialist = [...game.retinue, ...(game.companion.recruited ? [game.companion] : [])].find((member) => member.ability.id === objective.requiredAbility);
+          type = "coordination";
+          summary = specialist
+            ? `${objective.label} resists the heir alone. Ask ${specialist.name} to use ${specialist.ability.name}, then complete the ritual.`
+            : `${objective.label} requires fellowship expertise you have not recruited yet.`;
+          game.storyLine = summary;
+          return;
+        }
         type = "objective";
         objective.completed = true;
         game.pressure.value = Math.max(0, game.pressure.value - 35);
@@ -403,6 +412,11 @@ export class WorldEngine {
       } else if (ally.ability.id === "gust") {
         state.enemies.forEach((enemy) => { if (enemy.alive) { enemy.hp = Math.max(0, enemy.hp - 2); enemy.alive = enemy.hp > 0; if (!enemy.alive) state.guardiansDefeated += 1; enemy.intent = "recover"; enemy.attackReadyAt = now + 900; } });
         if (state.boss.intent === "strike" || state.boss.intent === "summon") { state.boss.intent = "idle"; state.boss.attackReadyAt = now + 1200; }
+      }
+      const coordinatedObjective = state.objectives.find((objective) => !objective.completed && !objective.primed && objective.requiredAbility === ally.ability.id);
+      if (coordinatedObjective) {
+        coordinatedObjective.primed = true;
+        summary += ` ${ally.name} prepares ${coordinatedObjective.label} for the heir's ritual.`;
       }
       const ready = state.objectives.every((objective) => objective.completed) && state.enemies.every((enemy) => !enemy.alive);
       if (ready && !state.boss.defeated) { state.boss.awakened = true; if (state.boss.intent === "shielded") state.boss.intent = "idle"; state.objective = `Defeat ${state.boss.name} ${state.boss.title}.`; }
@@ -608,7 +622,7 @@ export class WorldEngine {
 
   setAutonomy(mode: "manual" | "advisory" | "trusted"): { summary: string } {
     const world = this.require();
-    const summary = mode === "manual" ? "The fellowship waits for direct commands." : mode === "advisory" ? "The fellowship offers plans but waits for approval." : "Trusted companions may execute urgent defensive actions.";
+    const summary = mode === "manual" ? "The fellowship waits for direct commands." : mode === "advisory" ? "The fellowship offers plans and may pursue personal opportunities, but waits for approval on major tactics." : "Trusted companions may execute urgent defenses and pursue independent opportunities.";
     const next = produce(world, (draft) => { draft.gameplay!.autonomy = mode; draft.gameplay!.storyLine = summary; });
     this.commit(next, { id: makeId("act"), at: Date.now(), actor: "human", toolName: "set_autonomy", summary, data: { mode } });
     return { summary };
@@ -658,6 +672,70 @@ export class WorldEngine {
     const recommendation = this.getFellowshipRecommendation();
     if (!recommendation || recommendation.urgency !== "high") return null;
     try { return this.applyFellowshipRecommendation(); } catch { return null; }
+  }
+
+  runCompanionInitiative(now = Date.now()): { memberId: string; memberName: string; summary: string } | null {
+    const world = this.require();
+    const game = this.requireStageOne();
+    const away = game.initiatives.find((initiative) => initiative.status === "away");
+    if (away && now >= away.returnsAt) {
+      let summary = "";
+      const next = produce(world, (draft) => {
+        const state = draft.gameplay!;
+        const mission = state.initiatives.find((initiative) => initiative.memberId === away.memberId && initiative.status === "away")!;
+        const member = state.companion.id === mission.memberId ? state.companion : state.retinue.find((ally) => ally.id === mission.memberId)!;
+        mission.status = "returned";
+        if (member.id === "chr_elias") {
+          const enemy = state.enemies.find((candidate) => candidate.alive);
+          if (enemy) { enemy.hp = Math.max(1, enemy.hp - 3); mission.outcome = "scouted and wounded a guardian"; }
+        } else if (member.id === "chr_lira") {
+          state.pressure.value = Math.max(0, state.pressure.value - 22); mission.outcome = `decoded a safe path through ${state.pressure.name}`;
+        } else if (member.id === "chr_rook") {
+          member.hp = Math.max(1, member.hp - 14); state.player.hp = Math.min(state.player.maxHp, state.player.hp + 16); mission.outcome = "rescued captives, but returned damaged";
+        } else {
+          const objective = state.objectives.find((candidate) => !candidate.completed && candidate.requiredAbility === member.ability.id);
+          if (objective) objective.primed = true;
+          state.pressure.value = Math.min(state.pressure.max, state.pressure.value + 12); mission.outcome = "opened a shortcut, but drew the realm's attention";
+        }
+        summary = `${member.name} returns: I ${mission.outcome}.`;
+        state.banter.unshift({ speaker: member.name, line: summary.replace(`${member.name} returns: `, "") });
+        state.banter = state.banter.slice(0, 4); state.storyLine = summary;
+      });
+      this.commit(next, { id: makeId("act"), at: now, actor: "system", toolName: "companion_initiative", summary });
+      return { memberId: away.memberId, memberName: away.memberName, summary };
+    }
+    if (away || game.autonomy === "manual" || game.stageComplete || game.boss.awakened) return null;
+    const latest = [...game.initiatives].sort((a, b) => b.startedAt - a.startedAt)[0];
+    if (latest && now - latest.startedAt < 24000) return null;
+    const members = [...game.retinue, ...(game.companion.recruited ? [game.companion] : [])].filter((member) => member.hp > member.maxHp * .3);
+    if (!members.length) return null;
+    const member = members[(game.stage + game.guardiansDefeated + game.objectives.filter((objective) => objective.completed).length) % members.length]!;
+    const purposes: Record<string, string> = { chr_elias: "track the nearest guardian", chr_lira: "decode the realm's hidden pattern", chr_rook: "free anyone trapped beyond our route", chr_kael: "find a path the enemy believes impossible" };
+    const purpose = purposes[member.id] ?? "scout ahead";
+    const summary = `${member.name}: I'm going ahead to ${purpose}. I may not wait for permission—and I may bring trouble back with me.`;
+    const next = produce(world, (draft) => {
+      draft.gameplay!.initiatives.push({ memberId: member.id, memberName: member.name, purpose, startedAt: now, returnsAt: now + 6500, status: "away" });
+      draft.gameplay!.storyLine = summary; draft.gameplay!.banter.unshift({ speaker: member.name, line: summary.replace(`${member.name}: `, "") });
+      draft.gameplay!.banter = draft.gameplay!.banter.slice(0, 4);
+    });
+    this.commit(next, { id: makeId("act"), at: now, actor: "system", toolName: "companion_initiative", summary });
+    return { memberId: member.id, memberName: member.name, summary };
+  }
+
+  getProactiveCompanionLine(): { memberId: string; memberName: string; line: string } | null {
+    const game = this.requireStageOne();
+    const members = [...game.retinue, ...(game.companion.recruited ? [game.companion] : [])].filter((member) => member.hp > 0 && !game.initiatives.some((initiative) => initiative.memberId === member.id && initiative.status === "away"));
+    if (!members.length) return null;
+    const incomplete = game.objectives.find((objective) => !objective.completed);
+    const specialist = incomplete?.requiredAbility ? members.find((member) => member.ability.id === incomplete.requiredAbility) : undefined;
+    const member = specialist ?? members[(game.stage + game.guardiansDefeated + game.pressure.value) % members.length]!;
+    const lines: Record<string, string> = {
+      chr_elias: game.boss.awakened ? `Keep ${game.boss.name} looking at me. When I mark the opening, strike.` : `Tracks cross near ${incomplete?.label ?? "the eastern path"}. We should clear the flank before it closes behind us.`,
+      chr_lira: incomplete ? `${incomplete.label} is part lock, part memory. Let me read it before you touch anything heroic.` : `The pattern is changing. Give me a breath and I can tell you what the realm is trying to hide.`,
+      chr_rook: game.player.hp < game.player.maxHp * .65 ? "Your breathing is uneven. Stand behind me until it is not." : "There are people here the map does not count. I will not leave them because they are not an objective.",
+      chr_kael: game.pressure.value > 45 ? `This realm is tightening around us. I can break its rhythm, but subtlety will not survive.` : "The obvious road is watched. Fortunately, I have never respected obvious roads.",
+    };
+    return { memberId: member.id, memberName: member.name, line: lines[member.id] ?? `I have an idea for ${incomplete?.label ?? "our next move"}.` };
   }
 
   getAvailableCombos() {
@@ -852,19 +930,33 @@ export class WorldEngine {
     const member = memberId ? (game.companion.id === memberId && game.companion.recruited ? game.companion : game.retinue.find((ally) => ally.id === memberId)) : game.companion;
     if (!member || (member.id === game.companion.id && !game.companion.recruited)) return `Find ${game.companion.name} in ${game.biome.name} before issuing companion commands.`;
     const lowered = text.toLowerCase();
+    const voice = {
+      chr_elias: {
+        ready: "Bow is strung. Give me the dangerous target.", guard: "Stay inside my sightline. Anything reaching you answers to me.", attack: "I'll mark the leader. You take the opening.", idle: "I count exits before enemies. At the moment, I dislike both numbers.",
+      },
+      chr_lira: {
+        ready: "My ward can restore what this realm steals—including your Essence, if you stop spending it theatrically.", guard: "I can ward your mind, not your poor decisions. Stay close anyway.", attack: "Violence is an inelegant argument. Fortunately, I brought excellent punctuation.", idle: `The pattern is almost legible: ${game.pressure.name} at ${game.pressure.value}, ${game.enemies.filter((enemy) => enemy.alive).length} hostile annotations, and one stubborn heir.`,
+      },
+      chr_rook: {
+        ready: "My body is a wall by design. Protecting you is a choice.", guard: "Stand behind me, friend. I have calculated that I am wider.", attack: "I will make the opening. Please do not stand in it.", idle: "I am here. This is literal, and also a promise.",
+      },
+      chr_kael: {
+        ready: "Point at the impossible part. Those are usually mine.", guard: "Keep moving. I'll persuade their momentum to regret itself.", attack: "Finally, a plan with verbs. Heads down.", idle: "The obvious route is dull and trapped. I object to both qualities.",
+      },
+    }[member.id] ?? { ready: `My ability is ${member.ability.name}.`, guard: "I'll cover you.", attack: "I'm ready.", idle: "I'm with you." };
     if (game.boss.defeated && !game.sealCollected) return `${game.seal.name} lies where ${game.boss.name} fell. Let's finish this together.`;
     if (game.portalActive) return member.id === "chr_kael" ? "Another impossible road? Good. I was getting bored." : "The Portal is stable. Cross when you are ready; I'm with you.";
     if (lowered.includes("how are you") || lowered.includes("okay")) return `${member.fear} still weighs on me—but I trust this fellowship. Trust stands at ${member.trust}.`;
-    if (lowered.includes("ability") || lowered.includes("power") || lowered.includes("what can you do")) return `${member.ability.name}: ${member.ability.description} It is ${member.ability.readyAt <= Date.now() ? "ready now" : "still recharging"}.`;
+    if (lowered.includes("ability") || lowered.includes("power") || lowered.includes("what can you do")) return `${voice.ready} ${member.ability.name} is ${member.ability.readyAt <= Date.now() ? "ready now" : "still recharging"}.`;
     if (lowered.includes("health") || lowered.includes("hurt") || lowered.includes("status")) return `I have ${member.hp} of ${member.maxHp} health. You have ${game.player.hp} of ${game.player.maxHp}, and ${game.enemies.filter((enemy) => enemy.alive).length} threats remain.`;
     if (lowered.includes("pressure") || lowered.includes("blight") || lowered.includes("amnesia") || lowered.includes("heat") || lowered.includes("exposure") || lowered.includes("corruption")) return `${game.pressure.name} is ${game.pressure.value} of ${game.pressure.max}. ${game.pressure.description}`;
     if (lowered.includes("boss") || lowered.includes(game.boss.name.toLowerCase())) return game.boss.awakened ? `${game.boss.name} is exposed in phase ${game.boss.phase}, with ${game.boss.hp} strength remaining.` : `${game.boss.name}'s shield remains tied to ${game.objectives.filter((objective) => !objective.completed).length} objectives and ${game.enemies.filter((enemy) => enemy.alive).length} guardians.`;
     if (lowered.includes("objective") || lowered.includes("what now") || lowered.includes("what should") || lowered.includes("where next") || lowered.includes("help me")) return this.getNextObjectiveGuidance().recommendedAction;
     if (lowered.includes("remember") || lowered.includes("memory") || lowered.includes("promise")) return member.memories.length ? `I remember this: ${member.memories[member.memories.length - 1]}` : "We are still writing our first memory together.";
-    if (lowered.includes("scout") || lowered.includes("ahead")) return member.id === "chr_lira" ? `I can read the path. ${game.objectives.filter((objective) => !objective.completed).length} bindings remain.` : `The next objective is marked. I'll watch our flank.`;
-    if (lowered.includes("attack") || lowered.includes("strike")) return member.id === "chr_rook" ? "Threat identified. I will make an opening, friend." : `Understood. ${game.boss.name} won't get a quiet moment.`;
-    if (lowered.includes("protect") || lowered.includes("guard")) return member.id === "chr_kael" ? "Stay light on your feet. I'll turn their momentum against them." : "Stay close. Nobody in this party gets left behind.";
-    return member.id === "chr_lira" ? `Three thoughts: ${game.pressure.name} is at ${game.pressure.value}, ${game.enemies.filter((enemy) => enemy.alive).length} threats remain, and I would prefer we survive both.` : member.id === "chr_rook" ? `I am here. That is not a metaphor. You may rely on me.` : member.id === "chr_kael" ? `We could discuss destiny, or we could keep moving. I vote for moving.` : `We've completed ${game.objectives.filter((objective) => objective.completed).length} of ${game.objectives.length}. One step at a time.`;
+    if (lowered.includes("scout") || lowered.includes("ahead")) return member.id === "chr_lira" ? `I can read the path. ${game.objectives.filter((objective) => !objective.completed).length} bindings remain, though one is pretending to be a door.` : member.id === "chr_kael" ? "I'll take the high route. If I shout, it means I found something interesting—or gravity." : "I'll range ahead and return before you have time to make a reckless decision.";
+    if (lowered.includes("attack") || lowered.includes("strike")) return voice.attack;
+    if (lowered.includes("protect") || lowered.includes("guard")) return voice.guard;
+    return voice.idle;
   }
 
   moveParty(input: { locationId: string }, opts: { actor: Actor }): { summary: string; proposal?: Proposal } {

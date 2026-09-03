@@ -159,11 +159,21 @@ export interface FellowshipMember {
   memories: string[];
 }
 
+export interface CompanionInitiative {
+  memberId: string;
+  memberName: string;
+  purpose: string;
+  startedAt: number;
+  returnsAt: number;
+  status: "away" | "returned";
+  outcome?: string;
+}
+
 export interface StageGameplay {
   stage: CampaignStage;
   biome: { name: string; subtitle: string; theme: "forest" | "archives" | "forge" | "peaks" | "citadel" };
   player: { x: number; y: number; hp: number; maxHp: number; essence: number; weaponId: string };
-  objectives: Array<{ id: string; x: number; y: number; label: string; completed: boolean }>;
+  objectives: Array<{ id: string; x: number; y: number; label: string; completed: boolean; requiredAbility?: string; primed: boolean }>;
   enemies: StageEnemy[];
   companion: FellowshipMember & { x: number; y: number; recruited: boolean; mode: "follow" | "focus" | "guard" | "hold" };
   retinue: FellowshipMember[];
@@ -171,6 +181,7 @@ export interface StageGameplay {
   relationships: Array<{ members: [string, string]; score: number; status: "uneasy" | "friends" | "inseparable"; lastMoment: string }>;
   combos: Array<{ id: string; name: string; members: [string, string]; description: string; readyAt: number; cooldownMs: number }>;
   pendingBattlePlan: null | { id: string; source: "human" | "agent"; headline: string; reason: string; assignments: Array<{ memberId: string; memberName: string; action: "ability" | "guard" | "focus" | "follow" }>; status: "pending" | "accepted" | "rejected" };
+  initiatives: CompanionInitiative[];
   recruitment: { requiredObjectives: number; requiredKills: number; requiresWeapon: boolean; description: string; offerReady: boolean; prompt: string; choices: [string, string] };
   guardiansDefeated: number;
   pressure: { name: string; value: number; max: number; description: string };

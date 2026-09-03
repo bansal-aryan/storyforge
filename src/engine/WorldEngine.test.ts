@@ -159,7 +159,15 @@ describe("WorldEngine", () => {
       expect(stage.stage).toBe(expectedStage);
 
       if (stage.recruitment.requiresWeapon) engine.stageOneInteract(stage.weaponPickups[0]!);
-      for (const objective of stage.objectives) engine.stageOneInteract(objective);
+      let abilityTime = Date.now() + expectedStage * 100000;
+      for (const objective of stage.objectives) {
+        if (objective.requiredAbility) {
+          const specialist = [...stage.retinue, ...(stage.companion.recruited ? [stage.companion] : [])].find((member) => member.ability.id === objective.requiredAbility)!;
+          engine.useCompanionAbility(specialist.id, abilityTime);
+          abilityTime += specialist.ability.cooldownMs + 1;
+        }
+        engine.stageOneInteract(objective);
+      }
       for (const enemy of stage.enemies) {
         for (let hit = 0; hit < enemy.maxHp; hit += 1) engine.stageOneAttack(enemy);
       }
@@ -228,6 +236,30 @@ describe("WorldEngine", () => {
     engine.setFellowshipMemberTactic("chr_elias", "guard");
     expect(engine.snapshot().gameplay?.companion.mode).toBe("guard");
     expect(engine.getCompanionResponse("How are you?", "chr_elias")).toContain("trust");
+  });
+
+  it("requires a matching companion ability to unlock later-realm rituals", () => {
+    const engine = new WorldEngine(createEclipseInheritance());
+    const first = engine.snapshot().gameplay!;
+    for (const objective of first.objectives) engine.stageOneInteract(objective);
+    for (const enemy of first.enemies) for (let hit = 0; hit < enemy.maxHp; hit += 1) engine.stageOneAttack(enemy);
+    engine.stageOneInteract(first.companion); engine.resolveRecruitment(0);
+    const boss = engine.snapshot().gameplay!.boss;
+    for (let hit = 0; hit < boss.maxHp; hit += 1) engine.stageOneAttack(boss);
+    engine.stageOneInteract(boss); engine.stageOneInteract({ x: 2070, y: 180 });
+    const second = engine.snapshot().gameplay!;
+    expect(second.objectives[0]!.requiredAbility).toBe("mark");
+    expect(engine.stageOneInteract(second.objectives[0]!).type).toBe("coordination");
+    engine.useCompanionAbility("chr_elias", 1000);
+    expect(engine.stageOneInteract(second.objectives[0]!).type).toBe("objective");
+  });
+
+  it("gives Lira a distinct character voice", () => {
+    const engine = new WorldEngine(createEclipseInheritance());
+    const world = engine.snapshot();
+    world.gameplay!.retinue.push({ ...world.gameplay!.companion, id: "chr_lira", name: "Lira", ability: { ...world.gameplay!.companion.ability, id: "clarity", name: "Mnemonic Ward" } });
+    expect(engine.getCompanionResponse("What can you do?", "chr_lira")).toContain("theatrically");
+    expect(engine.getCompanionResponse("Attack now", "chr_lira")).toContain("punctuation");
   });
 
   it("infers and executes a grounded fellowship recommendation", () => {
