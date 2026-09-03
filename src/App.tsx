@@ -4,7 +4,7 @@ import { useWorldStore } from "./store/useWorldStore";
 import { parsePartyCommand } from "./voice/commandParser";
 
 type Point = { x: number; y: number };
-type SpeechRecognitionLike = { continuous: boolean; interimResults: boolean; lang: string; onresult: ((event: any) => void) | null; onerror: ((event: any) => void) | null; onstart: (() => void) | null; onend: (() => void) | null; start: () => void; stop: () => void; abort?: () => void };
+type SpeechRecognitionLike = { continuous: boolean; interimResults: boolean; maxAlternatives?: number; lang: string; onresult: ((event: any) => void) | null; onerror: ((event: any) => void) | null; onstart: (() => void) | null; onspeechend?: (() => void) | null; onend: (() => void) | null; start: () => void; stop: () => void; abort?: () => void };
 
 const WORLD = { width: 2200, height: 1300 };
 const PLAYER_SIZE = 16;
@@ -117,6 +117,10 @@ export default function App() {
   const autonomyTickRef = useRef(0);
   const dodgingRef = useRef(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const voiceDispatchTimerRef = useRef<number>(0);
+  const voiceSessionTimerRef = useRef<number>(0);
+  const voiceDispatchedRef = useRef(false);
+  const voiceTranscriptRef = useRef("");
   const previousHeroHp = useRef(game?.player.hp ?? 100);
   const previousEliasHp = useRef(game?.companion.hp ?? 100);
   const previousBossState = useRef({ stage: game?.stage ?? 1, awakened: game?.boss.awakened ?? false, phase: game?.boss.phase ?? 1, defeated: game?.boss.defeated ?? false });
@@ -125,6 +129,11 @@ export default function App() {
 
   useEffect(() => { playerRef.current = player; }, [player]);
   useEffect(() => { eliasRef.current = eliasVisual; }, [eliasVisual]);
+  useEffect(() => () => {
+    window.clearTimeout(voiceDispatchTimerRef.current);
+    window.clearTimeout(voiceSessionTimerRef.current);
+    recognitionRef.current?.abort?.();
+  }, []);
   useEffect(() => {
     if (!game) return;
     playerRef.current = { x: game.player.x, y: game.player.y };
@@ -311,11 +320,21 @@ export default function App() {
     if (!window.isSecureContext) { setCommandStatus("Microphone input requires HTTPS. Typed commands still work."); return; }
     if (!Recognition) { const status = "This browser does not provide speech recognition. Use the Send button or try Chrome/Safari."; setCommandStatus(status); setVoiceLog((previous) => [status, ...previous].slice(0, 4)); return; }
     const recognition = new Recognition() as SpeechRecognitionLike;
-    recognition.lang = "en-US"; recognition.continuous = false; recognition.interimResults = false;
-    recognition.onstart = () => { setMicEnabled(true); setCommandStatus("Listening… say a companion's name and what you need."); };
-    recognition.onresult = (event: any) => { const transcript = event.results?.[0]?.[0]?.transcript?.trim(); if (transcript) { setVoiceInput(transcript); setCommandStatus(`Heard: “${transcript}”`); sendToElias(transcript); } else setCommandStatus("I couldn't hear a command. Please try again."); };
-    recognition.onerror = (event: any) => { const messages: Record<string, string> = { "not-allowed": "Microphone access was denied. Allow microphone access in browser settings, or use Send.", "audio-capture": "No microphone was detected.", "no-speech": "No speech was detected. Tap Mic and speak after Listening appears.", network: "Speech recognition could not reach the browser service. Typed commands still work." }; setCommandStatus(messages[event.error] ?? `Voice input failed (${event.error ?? "unknown error"}). Typed commands still work.`); setMicEnabled(false); };
-    recognition.onend = () => setMicEnabled(false);
+    recognition.lang = "en-US"; recognition.continuous = false; recognition.interimResults = true; recognition.maxAlternatives = 1;
+    const dispatchTranscript = (transcript: string) => { if (voiceDispatchedRef.current || !transcript.trim()) return; voiceDispatchedRef.current = true; window.clearTimeout(voiceDispatchTimerRef.current); window.clearTimeout(voiceSessionTimerRef.current); setVoiceInput(transcript); setCommandStatus(`Heard: “${transcript}”`); sendToElias(transcript); recognition.stop(); };
+    recognition.onstart = () => { voiceDispatchedRef.current = false; voiceTranscriptRef.current = ""; setMicEnabled(true); setCommandStatus("Listening… speak now."); voiceSessionTimerRef.current = window.setTimeout(() => { if (!voiceDispatchedRef.current) { recognition.stop(); setCommandStatus("Listening timed out. Tap Mic and try a shorter command."); } }, 6500); };
+    recognition.onresult = (event: any) => {
+      let transcript = ""; let final = false;
+      for (let index = event.resultIndex ?? 0; index < event.results.length; index += 1) { transcript += `${event.results[index][0]?.transcript ?? ""} `; final ||= Boolean(event.results[index].isFinal); }
+      transcript = transcript.trim(); if (!transcript) return;
+      voiceTranscriptRef.current = transcript; setVoiceInput(transcript); setCommandStatus(`Hearing: “${transcript}”`);
+      window.clearTimeout(voiceDispatchTimerRef.current);
+      if (final) dispatchTranscript(transcript);
+      else voiceDispatchTimerRef.current = window.setTimeout(() => dispatchTranscript(transcript), 550);
+    };
+    recognition.onspeechend = () => { window.clearTimeout(voiceDispatchTimerRef.current); voiceDispatchTimerRef.current = window.setTimeout(() => { const transcript = voiceTranscriptRef.current.trim(); if (transcript && !voiceDispatchedRef.current) dispatchTranscript(transcript); else recognition.stop(); }, 180); };
+    recognition.onerror = (event: any) => { window.clearTimeout(voiceDispatchTimerRef.current); window.clearTimeout(voiceSessionTimerRef.current); const messages: Record<string, string> = { "not-allowed": "Microphone access was denied. Allow microphone access in browser settings, or use Send.", "audio-capture": "No microphone was detected.", "no-speech": "No speech was detected. Tap Mic and speak after Listening appears.", network: "Speech recognition could not reach the browser service. Typed commands still work." }; setCommandStatus(messages[event.error] ?? `Voice input failed (${event.error ?? "unknown error"}). Typed commands still work.`); setMicEnabled(false); };
+    recognition.onend = () => { window.clearTimeout(voiceDispatchTimerRef.current); window.clearTimeout(voiceSessionTimerRef.current); setMicEnabled(false); };
     try { recognitionRef.current = recognition; recognition.start(); } catch (error) { setMicEnabled(false); setCommandStatus(error instanceof Error ? `Could not start the microphone: ${error.message}` : "Could not start the microphone."); }
   };
 
