@@ -102,6 +102,7 @@ export default function App() {
   const [voiceInput, setVoiceInput] = useState("");
   const [spokenLine, setSpokenLine] = useState<{ speaker: string; text: string } | null>(null);
   const [micEnabled, setMicEnabled] = useState(false);
+  const [muted, setMuted] = useState(() => localStorage.getItem("storyforge:muted:v1") === "yes");
   const [commandStatus, setCommandStatus] = useState("Type a message or tap Mic to speak.");
   const [controlsOpen, setControlsOpen] = useState(false);
   const [resetArmed, setResetArmed] = useState(false);
@@ -165,7 +166,7 @@ export default function App() {
   }, [game]);
 
   const speak = useCallback((text: string, speakerId = "narrator", speakerName?: string) => {
-    if (!("speechSynthesis" in window)) return;
+    if (muted || !("speechSynthesis" in window)) return;
     const profile = voiceProfiles[speakerId] ?? voiceProfiles.narrator!;
     const utterance = new SpeechSynthesisUtterance(text);
     const voices = window.speechSynthesis.getVoices();
@@ -174,7 +175,17 @@ export default function App() {
     setSpokenLine({ speaker: speakerName ?? (speakerId.startsWith("chr_") ? speakerId.replace("chr_", "") : "Narrator"), text });
     utterance.onend = () => window.setTimeout(() => setSpokenLine((current) => current?.text === text ? null : current), 900);
     window.speechSynthesis.cancel(); window.speechSynthesis.speak(utterance);
-  }, []);
+  }, [muted]);
+
+  const toggleMute = () => {
+    setMuted((current) => {
+      const next = !current;
+      localStorage.setItem("storyforge:muted:v1", next ? "yes" : "no");
+      if (next && "speechSynthesis" in window) window.speechSynthesis.cancel();
+      if (next) setSpokenLine(null);
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (!game) return;
@@ -412,7 +423,7 @@ export default function App() {
         <section className="hud-section objective-hud"><span>{activeInitiative ? `${activeInitiative.memberName} is away · ${activeInitiative.purpose}` : "Current objective"}</span><strong>{game.objective}</strong></section>
         <section className="hud-section elias-hud"><div className="hud-label"><span>{game.companion.name} · {game.companion.mode}</span><b>{game.companion.recruited ? `${game.companion.hp}/${game.companion.maxHp}` : "—"}</b></div><div className="mini-meter friendly"><i style={{ width: `${game.companion.recruited ? (game.companion.hp / game.companion.maxHp) * 100 : 0}%` }} /></div><small>{game.companion.recruited ? `${game.companion.role} active` : "Not recruited"}</small></section>
         <section className="hud-section progress-hud"><span>{game.biome.subtitle} · Party {game.retinue.length + (game.companion.recruited ? 1 : 0)}</span><strong>{completedCount}/3 objectives · {aliveEnemies} threats</strong><div className="pressure-meter" title={game.pressure.description}><i style={{ width: `${game.pressure.value}%` }} /></div><small>{game.pressure.name} {game.pressure.value}/{game.pressure.max} · {game.campaignComplete ? "Dawn restored" : game.sealCollected ? "Seal secured" : game.portalActive ? "Portal active" : "Boss shielded"}</small></section>
-        <div className="hud-actions"><span className={`mcp-light ${webmcp}`} title={`WebMCP ${webmcp}`} /><button className={agentPanelOpen ? "active" : ""} onClick={() => setAgentPanelOpen((open) => !open)}>Agent</button><button onClick={() => setFellowshipOpen(true)}>Party</button><button onClick={() => setControlsOpen(true)}>Controls</button><button onClick={() => setShowIntro(true)}>Lore</button></div>
+        <div className="hud-actions"><span className={`mcp-light ${webmcp}`} title={`WebMCP ${webmcp}`} /><button className={agentPanelOpen ? "active" : ""} onClick={() => setAgentPanelOpen((open) => !open)}>Agent</button><button onClick={() => setFellowshipOpen(true)}>Party</button><button onClick={() => setControlsOpen(true)}>Controls</button><button className={`sound-toggle ${muted ? "active" : ""}`} onClick={toggleMute} aria-label={muted ? "Unmute character voices" : "Mute character voices"} aria-pressed={muted} title={muted ? "Unmute character voices" : "Mute character voices"}>{muted ? "🔇" : "🔊"}</button><button onClick={() => setShowIntro(true)}>Lore</button></div>
       </nav>
       <main className={`world-panel expanded-world theme-${game.biome.theme} ${game.campaignComplete ? "campaign-complete" : ""}`}>
         <div className="camera-layer" style={{ width: WORLD.width, height: WORLD.height, transform: `translate3d(${camera.x}px, ${camera.y}px, 0)` }}>

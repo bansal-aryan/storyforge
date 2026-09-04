@@ -894,6 +894,16 @@ button.hotbar-slot:hover { border-color: #9c8e55; background: #1d2924; }
 .hud-label { font-size: .68rem; }
 .hud-actions { border-right: 0; gap: 3px; padding-right: 0; }
 .hud-actions button { padding: 7px 8px; font-size: .62rem; }
+.hud-actions .sound-toggle {
+  width: 29px;
+  padding-inline: 0;
+  font-size: .78rem;
+  line-height: 1;
+}
+.hud-actions .sound-toggle.active {
+  background: rgba(31, 49, 43, .12);
+  color: #34443e;
+}
 
 .world-message {
   top: 14px;
