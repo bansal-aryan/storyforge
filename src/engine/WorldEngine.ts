@@ -104,6 +104,17 @@ export class WorldEngine {
     return this.commit(world, change);
   }
 
+  recordPartyActivity(toolName: "party_command" | "voice_party_command", summary: string): WorldSnapshot {
+    const world = this.require();
+    return this.commit(world, {
+      id: makeId("act"),
+      at: Date.now(),
+      actor: "human",
+      toolName,
+      summary,
+    });
+  }
+
   createWorld(input: { name: string; premise: string; tone: Tone }): WorldSnapshot {
     const now = Date.now();
     const sceneId = makeId("scn");

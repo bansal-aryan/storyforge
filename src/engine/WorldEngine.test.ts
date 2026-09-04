@@ -394,6 +394,16 @@ describe("WorldEngine", () => {
     expect(changes.at(-1)?.toolName).toBe("inspect_battlefield");
   });
 
+  it("records party conversations for the unified live feed", () => {
+    const engine = new WorldEngine(createEclipseInheritance());
+    engine.recordPartyActivity("voice_party_command", "You → Elias: scout ahead.");
+    expect(engine.snapshot().activity[0]).toMatchObject({
+      actor: "human",
+      toolName: "voice_party_command",
+      summary: "You → Elias: scout ahead.",
+    });
+  });
+
   it("explains only the next objective allowed by canonical state", () => {
     const engine = new WorldEngine(createEclipseInheritance());
     const guidance = engine.getNextObjectiveGuidance();

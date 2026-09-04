@@ -296,12 +296,13 @@ export default function App() {
     raf = requestAnimationFrame(tick); return () => cancelAnimationFrame(raf);
   }, [controls, controlsOpen, game, keys, showIntro]);
 
-  const sendToElias = useCallback((message: string) => {
+  const sendToElias = useCallback((message: string, source: "typed" | "voice" = "typed") => {
     if (!message.trim() || !game) { setCommandStatus("Enter a command or question first."); return; }
     const fellowship = [...game.retinue, ...(game.companion.recruited ? [game.companion] : [])];
     const parsed = parsePartyCommand(message, [...fellowship.map((ally) => ally.name), game.companion.name]);
     if (parsed.targetName === game.companion.name && !game.companion.recruited) {
       const response = `${game.companion.name} has not joined yet. Complete their trial: ${game.recruitment.description}`;
+      engine.recordPartyActivity(source === "voice" ? "voice_party_command" : "party_command", `You → ${game.companion.name}: “${message}” · ${response}`);
       setCommandStatus(response); setVoiceLog((previous) => [response, ...previous].slice(0, 4)); setVoiceInput(""); return;
     }
     const inferredAbilityTarget = parsed.action === "ability" && !parsed.targetName
@@ -319,7 +320,7 @@ export default function App() {
         ?? (parsed.action === "focus" ? fellowship.find((ally) => ally.id === "chr_elias") : undefined)
       : undefined;
     const targets = parsed.everyone ? fellowship : [fellowship.find((ally) => ally.name === parsed.targetName) ?? inferredAbilityTarget ?? inferredSpeaker ?? (game.companion.recruited ? game.companion : fellowship[0])].filter(Boolean);
-    if (!targets.length) { const response = "No recruited companion can answer yet."; setCommandStatus(response); setVoiceLog((previous) => [response, ...previous].slice(0, 4)); return; }
+    if (!targets.length) { const response = "No recruited companion can answer yet."; engine.recordPartyActivity(source === "voice" ? "voice_party_command" : "party_command", `You: “${message}” · ${response}`); setCommandStatus(response); setVoiceLog((previous) => [response, ...previous].slice(0, 4)); return; }
     let actionSummary = ""; const target = targets[0]!;
     try {
       if (/\b(trusted|advisory|manual) mode\b/i.test(message)) {
@@ -341,6 +342,7 @@ export default function App() {
       }
     } catch (error) { actionSummary = error instanceof Error ? error.message : "I can't do that yet."; }
     const response = actionSummary || engine.getCompanionResponse(message, target.id);
+    engine.recordPartyActivity(source === "voice" ? "voice_party_command" : "party_command", `You → ${target.name}: “${message}” · ${target.name}: ${response}`);
     setCommandStatus(`${target.name}: ${response}`); setVoiceLog((previous) => [`You: ${message}`, `${target.name}: ${response}`, ...previous].slice(0, 4)); speak(response, target.id, target.name); setVoiceInput("");
   }, [game, speak]);
 
@@ -351,7 +353,7 @@ export default function App() {
     if (!Recognition) { const status = "This browser does not provide speech recognition. Use the Send button or try Chrome/Safari."; setCommandStatus(status); setVoiceLog((previous) => [status, ...previous].slice(0, 4)); return; }
     const recognition = new Recognition() as SpeechRecognitionLike;
     recognition.lang = "en-US"; recognition.continuous = false; recognition.interimResults = true; recognition.maxAlternatives = 1;
-    const dispatchTranscript = (transcript: string) => { if (voiceDispatchedRef.current || !transcript.trim()) return; voiceDispatchedRef.current = true; window.clearTimeout(voiceDispatchTimerRef.current); window.clearTimeout(voiceSessionTimerRef.current); setVoiceInput(transcript); setCommandStatus(`Heard: “${transcript}”`); sendToElias(transcript); recognition.stop(); };
+    const dispatchTranscript = (transcript: string) => { if (voiceDispatchedRef.current || !transcript.trim()) return; voiceDispatchedRef.current = true; window.clearTimeout(voiceDispatchTimerRef.current); window.clearTimeout(voiceSessionTimerRef.current); setVoiceInput(transcript); setCommandStatus(`Heard: “${transcript}”`); sendToElias(transcript, "voice"); recognition.stop(); };
     recognition.onstart = () => { voiceDispatchedRef.current = false; voiceTranscriptRef.current = ""; setMicEnabled(true); setCommandStatus("Listening… speak now."); voiceSessionTimerRef.current = window.setTimeout(() => { if (!voiceDispatchedRef.current) { recognition.stop(); setCommandStatus("Listening timed out. Tap Mic and try a shorter command."); } }, 6500); };
     recognition.onresult = (event: any) => {
       let transcript = ""; let final = false;
@@ -385,7 +387,9 @@ export default function App() {
   const aliveEnemies = game.enemies.filter((enemy) => enemy.alive).length;
   const companionGlyph = game.companion.role.includes("Mage") ? "✧" : game.companion.role.includes("Golem") ? "◆" : game.companion.role.includes("Monk") ? "⌁" : "➶";
   const pendingProposals = snapshot.proposals.filter((proposal) => proposal.status === "pending").slice(0, 3);
-  const agentActivity = snapshot.activity.filter((entry) => entry.actor === "agent").slice(0, 5);
+  const partyActivityTools = new Set(["party_command", "voice_party_command", "companion_ability", "companion_initiative", "companion_attack", "command_companion", "propose_battle_plan", "fellowship_combo", "set_autonomy", "recruit_companion"]);
+  const agentActivity = snapshot.activity.filter((entry) => entry.actor === "agent" || (entry.toolName && partyActivityTools.has(entry.toolName))).slice(0, 7);
+  const activityLabel = (entry: (typeof agentActivity)[number]) => entry.actor === "agent" ? entry.toolName ?? "webmcp" : entry.toolName === "party_command" ? "party chat" : entry.toolName === "voice_party_command" ? "voice chat" : entry.toolName === "companion_initiative" ? "initiative" : entry.toolName === "companion_attack" ? "companion" : entry.toolName?.replaceAll("_", " ") ?? "party";
   const fellowshipRecommendation = engine.getFellowshipRecommendation();
   const fellowship = [...game.retinue, ...(game.companion.recruited ? [game.companion] : [])];
   const awayMemberIds = new Set(game.initiatives.filter((initiative) => initiative.status === "away").map((initiative) => initiative.memberId));
@@ -430,7 +434,7 @@ export default function App() {
         <div className="world-message">{game.storyLine}</div>
         {game.banter.length > 0 && <div className="party-banter" aria-live="polite"><small>Fellowship</small>{game.banter.slice(0, 2).map((line, index) => <p key={`${line.speaker}-${index}`}><b>{line.speaker}</b> {line.line}</p>)}</div>}
         <aside className="party-dock" aria-label="Fellowship abilities">{[...game.retinue, ...(game.companion.recruited ? [game.companion] : [])].map((ally) => { const cooling = ally.ability.readyAt > Date.now(); return <button key={ally.id} disabled={cooling || ally.hp <= 0} onClick={() => { const result = engine.useCompanionAbility(ally.id); speak(result.summary, ally.id, ally.name); }} title={ally.ability.description}><span>{ally.name} · {ally.tactic}</span><strong>{ally.ability.name}</strong><small>{ally.bond} · {ally.trust} trust{cooling ? " · recharging" : " · ready"}</small></button>; })}</aside>
-        {agentPanelOpen && <aside className="agent-panel" aria-label="WebMCP agent activity"><header><div><small>Live collaboration</small><strong>WebMCP Agent</strong></div><span className={`agent-status ${webmcp}`}>{webmcp}</span></header><p className="agent-explainer">The agent reads canonical battle state and issues structured, logged commands. Coordinated plans stay yours to approve.</p><div className="agent-tools"><code>inspect_battlefield</code><code>inspect_fellowship</code><code>propose_battle_plan</code><code>command_companion</code><code>explain_next_objective</code></div>{pendingProposals.length > 0 && <section><h3>Needs your decision</h3>{pendingProposals.map((proposal) => <article className="proposal-row" key={proposal.id}><div><small>{proposal.toolName}</small><p>{proposal.summary}</p></div><div><button onClick={() => engine.rejectProposal(proposal.id)}>Reject</button><button className="approve" onClick={() => engine.applyProposal(proposal.id)}>Accept</button></div></article>)}</section>}<section><h3>Agent activity</h3>{agentActivity.length ? agentActivity.map((entry) => <article className="activity-row" key={entry.id}><code>{entry.toolName ?? "agent"}</code><span>{entry.summary}</span></article>) : <p className="agent-empty">Waiting for the first WebMCP tool call. Ask the agent to inspect the battlefield.</p>}</section></aside>}
+        {agentPanelOpen && <aside className="agent-panel" aria-label="Party and WebMCP agent activity"><header><div><small>Live collaboration</small><strong>Party &amp; Agent Activity</strong></div><span className={`agent-status ${webmcp}`}>{webmcp}</span></header><p className="agent-explainer">A live record of WebMCP calls, party conversations, companion decisions, and autonomous actions. Coordinated plans stay yours to approve.</p><div className="agent-tools"><code>inspect_battlefield</code><code>inspect_fellowship</code><code>propose_battle_plan</code><code>command_companion</code><code>explain_next_objective</code></div>{pendingProposals.length > 0 && <section><h3>Needs your decision</h3>{pendingProposals.map((proposal) => <article className="proposal-row" key={proposal.id}><div><small>{proposal.toolName}</small><p>{proposal.summary}</p></div><div><button onClick={() => engine.rejectProposal(proposal.id)}>Reject</button><button className="approve" onClick={() => engine.applyProposal(proposal.id)}>Accept</button></div></article>)}</section>}<section><h3>Live activity</h3>{agentActivity.length ? agentActivity.map((entry) => <article className={`activity-row activity-${entry.actor}`} key={entry.id}><code>{activityLabel(entry)}</code><span>{entry.summary}</span></article>) : <p className="agent-empty">No party activity yet. Ask a companion for advice or have an agent inspect the battlefield.</p>}</section></aside>}
         {spokenLine && <div className="spoken-caption"><b>{spokenLine.speaker}</b><span>{spokenLine.text}</span></div>}
         {fellowshipRecommendation && <div className={`party-recommendation ${fellowshipRecommendation.urgency}`}><div><small>{fellowshipRecommendation.memberName} suggests</small><strong>{fellowshipRecommendation.headline}</strong><span>{fellowshipRecommendation.reason}</span></div><button onClick={() => { const result = engine.applyFellowshipRecommendation(); speak(result.summary, fellowshipRecommendation.memberId, fellowshipRecommendation.memberName); setCommandStatus(result.summary); }}>Do it</button></div>}
         <div className="companion-command" title={voiceLog[0]}><div className="command-input-row"><input value={voiceInput} onChange={(event) => setVoiceInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); sendToElias(voiceInput); } }} placeholder={game.retinue.length || game.companion.recruited ? "Elias, guard me…" : `Ask about ${game.companion.name}'s trial…`} aria-label="Message the fellowship" /><button className="send-command" onClick={() => sendToElias(voiceInput)}>Send</button><button className={`mic-command ${micEnabled ? "listening" : ""}`} onClick={startVoiceChat}>{micEnabled ? "Stop" : "Mic"}</button></div><p className="command-status" aria-live="polite">{commandStatus}</p></div>
